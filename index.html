@@ -389,7 +389,7 @@
 
     .log-item {
       display: grid;
-      grid-template-columns: 1fr auto auto auto auto;
+      grid-template-columns: 1fr auto auto auto auto auto;
       align-items: center;
       gap: 8px;
       padding: 9px 16px;
@@ -504,6 +504,65 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       font-size: 12px;
+    }
+
+    .log-time-edit {
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .log-time-edit:hover { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; }
+
+    .log-time-input {
+      font-family: inherit;
+      font-size: 12px;
+      padding: 2px 4px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      width: 88px;
+    }
+
+    .log-del-btn {
+      opacity: 0;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 15px;
+      line-height: 1;
+      transition: opacity 0.1s, color 0.1s, background 0.1s;
+    }
+    .log-item:hover .log-del-btn { opacity: 1; }
+    .log-del-btn:hover { color: var(--red); background: #fdecea; }
+
+    /* Add-entry panel */
+    .add-entry-panel {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      background: var(--surface2);
+    }
+
+    .form-group input[type="datetime-local"] {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+    .form-group input[type="datetime-local"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
     }
 
     .log-arrow { color: var(--text-muted); font-size: 11px; }
@@ -754,7 +813,7 @@
     @media (max-width: 480px) {
       header { padding: 0 12px; }
       main { padding: 16px 8px; }
-      .log-item { grid-template-columns: 1fr auto auto auto; }
+      .log-item { grid-template-columns: 1fr auto auto auto auto; }
       .log-arrow { display: none; }
     }
   </style>
@@ -854,7 +913,30 @@
         <span id="logChevron" style="display:inline-block;transition:transform 0.2s;margin-right:5px;font-style:normal;font-size:10px">▼</span>
         Time log
       </span>
-      <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear log</button>
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" onclick="toggleAddEntryPanel()">+ Add entry</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear log</button>
+      </div>
+    </div>
+    <div class="add-entry-panel" id="addEntryPanel" style="display:none">
+      <div class="form-group">
+        <label for="addEntryTask">Task</label>
+        <input type="text" id="addEntryTask" list="addEntryTaskList" placeholder="Task name" autocomplete="off"
+               onkeydown="if(event.key==='Enter')saveManualEntry()">
+        <datalist id="addEntryTaskList"></datalist>
+      </div>
+      <div class="form-group">
+        <label for="addEntryStart">Start</label>
+        <input type="datetime-local" id="addEntryStart">
+      </div>
+      <div class="form-group">
+        <label for="addEntryEnd">End <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <input type="datetime-local" id="addEntryEnd">
+      </div>
+      <div style="display:flex;gap:8px;padding-top:18px">
+        <button class="btn btn-primary btn-sm" onclick="saveManualEntry()">Add entry</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleAddEntryPanel()">Cancel</button>
+      </div>
     </div>
     <ul class="log-list" id="logList"></ul>
   </div>
@@ -932,6 +1014,8 @@ let state = loadData();
 
 let activeCategoryEntryId = null;
 let activeNameEditEntryId = null;
+let activeTimeEditEntryId = null;
+let activeTimeEditField = null; // 'start' | 'end'
 
 const CAT_PALETTE = [
   { bg: '#ede9fe', fg: '#5b21b6' },
@@ -1340,6 +1424,144 @@ function setCategory(entryId, cat) {
 }
 
 // ============================================================
+// Log editing helpers
+// ============================================================
+
+function formatDateTimeLocal(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d)) return '';
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function openTimeEditor(entryId, field) {
+  activeCategoryEntryId = null;
+  activeNameEditEntryId = null;
+  activeTimeEditEntryId = entryId;
+  activeTimeEditField = field;
+  renderLog();
+  setTimeout(() => { const inp = document.querySelector('.log-time-input'); if (inp) inp.focus(); }, 30);
+}
+
+function closeTimeEditor() {
+  activeTimeEditEntryId = null;
+  activeTimeEditField = null;
+  renderLog();
+}
+
+function saveTimeEdit(entryId, field, value) {
+  if (!value) { closeTimeEditor(); return; }
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  // Preserve the original date, apply the new HH:MM
+  const originalIso = field === 'start' ? (entry.startTime || entry.timestamp) : entry.endTime;
+  const base = new Date(originalIso || new Date());
+  const [h, m] = value.split(':').map(Number);
+  base.setHours(h, m, 0, 0);
+  const newIso = base.toISOString();
+  if (field === 'start') {
+    if (entry.endTime && new Date(newIso) >= new Date(entry.endTime)) {
+      alert('Start time must be before end time'); return;
+    }
+    entry.startTime = newIso;
+  } else {
+    const startIso = entry.startTime || entry.timestamp;
+    if (new Date(newIso) <= new Date(startIso)) {
+      alert('End time must be after start time'); return;
+    }
+    entry.endTime = newIso;
+  }
+  activeTimeEditEntryId = null;
+  activeTimeEditField = null;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
+function buildTimeInput(entry, field, currentIso) {
+  const inp = document.createElement('input');
+  inp.type = 'time';
+  inp.className = 'log-time-input';
+  const d = new Date(currentIso);
+  const pad = n => n.toString().padStart(2, '0');
+  inp.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  inp.addEventListener('change', () => { if (inp.value) saveTimeEdit(entry.id, field, inp.value); });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); if (inp.value) saveTimeEdit(entry.id, field, inp.value); }
+    if (e.key === 'Escape') { e.preventDefault(); closeTimeEditor(); }
+  });
+  inp.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (activeTimeEditEntryId === entry.id && activeTimeEditField === field) closeTimeEditor();
+    }, 200);
+  });
+  return inp;
+}
+
+function deleteLogEntry(id) {
+  if (state.active.entryId === id) state.active = { taskId: null, entryId: null };
+  state.log = state.log.filter(e => e.id !== id);
+  saveData();
+  renderAll();
+}
+
+function toggleAddEntryPanel() {
+  const panel = document.getElementById('addEntryPanel');
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+  document.getElementById('addEntryTask').value = '';
+  document.getElementById('addEntryStart').value = formatDateTimeLocal(new Date().toISOString());
+  document.getElementById('addEntryEnd').value = '';
+  const dl = document.getElementById('addEntryTaskList');
+  dl.innerHTML = '';
+  state.tasks.forEach(t => { const o = document.createElement('option'); o.value = t.name; dl.appendChild(o); });
+  panel.style.display = 'flex';
+  setTimeout(() => document.getElementById('addEntryTask').focus(), 50);
+}
+
+function saveManualEntry() {
+  const taskName = document.getElementById('addEntryTask').value.trim();
+  const startVal = document.getElementById('addEntryStart').value;
+  const endVal = document.getElementById('addEntryEnd').value;
+  if (!taskName) { document.getElementById('addEntryTask').focus(); return; }
+  if (!startVal) { document.getElementById('addEntryStart').focus(); return; }
+  const startTime = new Date(startVal).toISOString();
+  let endTime = null;
+  if (endVal) {
+    if (new Date(endVal) <= new Date(startVal)) { alert('End time must be after start time'); return; }
+    endTime = new Date(endVal).toISOString();
+  }
+  // Create task if it doesn't exist yet
+  let task = state.tasks.find(t => t.name.toLowerCase() === taskName.toLowerCase());
+  if (!task) task = createTask(taskName, false);
+
+  const entry = { id: crypto.randomUUID(), taskId: task.id, taskName: task.name, startTime, endTime, category: null };
+
+  // Insert then sort descending by start time (newest-first)
+  state.log.push(entry);
+  state.log.sort((a, b) => {
+    const aMs = new Date(a.startTime || a.timestamp || 0).getTime();
+    const bMs = new Date(b.startTime || b.timestamp || 0).getTime();
+    return bMs - aMs;
+  });
+
+  // Auto end time: if no end given, use start of the chronologically next entry
+  if (!endTime) {
+    const i = state.log.indexOf(entry);
+    if (i > 0) {
+      const next = state.log[i - 1];
+      if (next && (next.startTime || next.timestamp)) entry.endTime = next.startTime || next.timestamp;
+    }
+  }
+  saveData();
+  document.getElementById('addEntryPanel').style.display = 'none';
+  renderAll();
+}
+
+// ============================================================
 // Log
 // ============================================================
 
@@ -1376,40 +1598,80 @@ function renderLog() {
   state.log.slice(0, 100).forEach(entry => {
     const isActive = entry.id === state.active.entryId;
     const isPickerOpen = entry.id === activeCategoryEntryId;
-
-    // Support old entries that only have `timestamp`
+    const isEditingStart = entry.id === activeTimeEditEntryId && activeTimeEditField === 'start';
+    const isEditingEnd   = entry.id === activeTimeEditEntryId && activeTimeEditField === 'end';
     const startIso = entry.startTime || entry.timestamp;
-    const startStr = formatTime(startIso);
-
-    let endCell, durStr;
-    if (isActive) {
-      endCell = `<span class="log-dot"></span>`;
-      durStr = formatDuration(Date.now() - new Date(startIso).getTime());
-    } else {
-      endCell = entry.endTime
-        ? `<span class="log-time">${formatTime(entry.endTime)}</span>`
-        : `<span class="log-time" style="color:var(--text-muted)">—</span>`;
-      durStr = entry.endTime && entry.startTime
-        ? formatDuration(new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime())
-        : '';
-    }
 
     const li = document.createElement('li');
     li.className = 'log-item' + (isActive ? ' is-active' : '');
     li.dataset.entryId = entry.id;
 
-    // Static grid cells (task col placeholder filled in below)
-    li.innerHTML = `
-      <span class="log-task-col"></span>
-      <span class="log-time">${startStr}</span>
-      <span class="log-arrow">→</span>
-      ${endCell}
-      <span class="log-duration">${durStr}</span>
-    `;
+    // Col 1: task column (filled below)
+    const taskCol = document.createElement('span');
+    taskCol.className = 'log-task-col';
+    li.appendChild(taskCol);
 
-    // Build task column: task name + category badge/picker
-    const taskCol = li.querySelector('.log-task-col');
+    // Col 2: start time
+    if (isEditingStart) {
+      li.appendChild(buildTimeInput(entry, 'start', startIso));
+    } else {
+      const span = document.createElement('span');
+      span.className = 'log-time log-time-edit';
+      span.textContent = formatTime(startIso);
+      span.title = 'Click to edit start time';
+      span.addEventListener('click', () => openTimeEditor(entry.id, 'start'));
+      li.appendChild(span);
+    }
 
+    // Col 3: arrow
+    const arrow = document.createElement('span');
+    arrow.className = 'log-arrow';
+    arrow.textContent = '→';
+    li.appendChild(arrow);
+
+    // Col 4: end time
+    if (isActive) {
+      const dot = document.createElement('span');
+      dot.className = 'log-dot';
+      li.appendChild(dot);
+    } else if (isEditingEnd) {
+      li.appendChild(buildTimeInput(entry, 'end', entry.endTime));
+    } else if (entry.endTime) {
+      const span = document.createElement('span');
+      span.className = 'log-time log-time-edit';
+      span.textContent = formatTime(entry.endTime);
+      span.title = 'Click to edit end time';
+      span.addEventListener('click', () => openTimeEditor(entry.id, 'end'));
+      li.appendChild(span);
+    } else {
+      const span = document.createElement('span');
+      span.className = 'log-time';
+      span.style.color = 'var(--text-muted)';
+      span.textContent = '—';
+      li.appendChild(span);
+    }
+
+    // Col 5: duration
+    const durMs = isActive
+      ? Date.now() - new Date(startIso).getTime()
+      : (entry.endTime && entry.startTime)
+        ? new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime()
+        : -1;
+    const durSpan = document.createElement('span');
+    durSpan.className = 'log-duration';
+    if (isActive) durSpan.style.color = 'var(--green)';
+    durSpan.textContent = durMs >= 0 ? formatDuration(durMs) : '';
+    li.appendChild(durSpan);
+
+    // Col 6: delete button
+    const delBtn = document.createElement('button');
+    delBtn.className = 'log-del-btn';
+    delBtn.title = 'Delete entry';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => deleteLogEntry(entry.id));
+    li.appendChild(delBtn);
+
+    // Fill task column
     if (activeNameEditEntryId === entry.id) {
       const input = document.createElement('input');
       input.type = 'text';
@@ -1438,7 +1700,6 @@ function renderLog() {
     }
 
     if (isPickerOpen) {
-      // Inline picker — rendered as a grid-spanning 2nd row
       const pickerRow = document.createElement('div');
       pickerRow.className = 'cat-picker-row';
 
@@ -1464,7 +1725,6 @@ function renderLog() {
       if (state.categories.length > 0 || entry.category) {
         const chipsDiv = document.createElement('div');
         chipsDiv.className = 'cat-chips';
-
         state.categories.slice(0, 10).forEach(cat => {
           const btn = document.createElement('button');
           btn.className = 'cat-chip';
@@ -1473,7 +1733,6 @@ function renderLog() {
           btn.addEventListener('mousedown', e => { e.preventDefault(); setCategory(entry.id, cat); });
           chipsDiv.appendChild(btn);
         });
-
         if (entry.category) {
           const clearBtn = document.createElement('button');
           clearBtn.className = 'cat-chip cat-chip-clear';
@@ -1481,13 +1740,10 @@ function renderLog() {
           clearBtn.addEventListener('mousedown', e => { e.preventDefault(); setCategory(entry.id, null); });
           chipsDiv.appendChild(clearBtn);
         }
-
         pickerRow.appendChild(chipsDiv);
       }
-
       li.appendChild(pickerRow);
     } else {
-      // Category badge or "+ tag" button
       const catBtn = document.createElement('button');
       if (entry.category) {
         catBtn.className = 'log-cat';
@@ -1800,6 +2056,9 @@ function importData(event) {
 
     state = parsed;
     activeCategoryEntryId = null;
+    activeNameEditEntryId = null;
+    activeTimeEditEntryId = null;
+    activeTimeEditField = null;
     saveData();
     document.getElementById('intervalInput').value = state.settings.intervalMinutes;
     document.getElementById('retentionInput').value = state.settings.retentionDays;
