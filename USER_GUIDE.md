@@ -38,7 +38,7 @@ Click the trash icon on any task row. If that task is currently being tracked, t
 
 ## Check-ins
 
-A check-in fires automatically at the configured interval (default every 30 minutes). It opens a modal asking what you're working on.
+A check-in fires automatically at the configured interval (default every 5 minutes). It opens a modal asking what you're working on.
 
 - **Pick an existing task** to switch to it (or keep the highlighted active one running).
 - **Type in the bottom field** and press **Add & start** to create a new task on the fly.
@@ -95,6 +95,17 @@ Categories tag what type of work an entry represents (e.g. *Deep work*, *Admin*,
 
 The table at the bottom shows tracked time broken down by category for the current Mon–Sun week. Each cell shows the total duration for that category on that day. The rightmost column is the weekly total per category; the bottom row is the daily total.
 
+### Exporting a PDF report
+
+Click the **⬇ PDF** button in the week report header. A new tab opens with a printable report containing:
+
+- **Weekly Summary by Task** — a table showing each task's time per day and weekly total.
+- **Daily Breakdown** — for each day that has entries, a table of individual sessions with task name, category, start/end times, and duration.
+
+From the print dialog choose **Save as PDF** (or your browser's equivalent) to download the file.
+
+> If nothing opens, check that your browser allows pop-ups for the page.
+
 ---
 
 ## Settings
@@ -103,7 +114,7 @@ Click the ⚙ icon in the header.
 
 | Setting | Default | Description |
 |---|---|---|
-| Check-in every … minutes | 30 | How often the check-in modal fires. |
+| Check-in every … minutes | 5 | How often the check-in modal fires. |
 | Keep non-recurring tasks for … days | 7 | One-off tasks that haven't been used within this window are automatically removed at the next check-in. |
 
 ### Backup and restore

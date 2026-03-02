@@ -948,7 +948,15 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">This week</span>
-      <span id="weekRangeLabel" style="font-size:12px;color:var(--text-muted)"></span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="weekRangeLabel" style="font-size:12px;color:var(--text-muted)"></span>
+        <button class="btn btn-ghost btn-sm" onclick="generateWeekPDF()" title="Export weekly report as PDF">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" style="flex-shrink:0">
+            <path d="M2 10v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2M7 1v7M4.5 5.5 7 8l2.5-2.5"/>
+          </svg>
+          PDF
+        </button>
+      </div>
     </div>
     <div id="weekReport"></div>
   </div>
@@ -2108,6 +2116,216 @@ function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+
+// ============================================================
+// PDF report
+// ============================================================
+
+function generateWeekPDF() {
+  const days = getWeekDays();
+  const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const boundaries = days.map(d => ({ start: d.getTime(), end: d.getTime() + 86400000 }));
+
+  // Group log entries by day (sorted ascending by start time)
+  const dayEntries = days.map(() => []);
+  state.log.forEach(entry => {
+    const startMs = new Date(entry.startTime || entry.timestamp).getTime();
+    if (isNaN(startMs)) return;
+    const idx = boundaries.findIndex(b => startMs >= b.start && startMs < b.end);
+    if (idx === -1) return;
+    dayEntries[idx].push(entry);
+  });
+  dayEntries.forEach(arr => arr.sort((a, b) =>
+    new Date(a.startTime || a.timestamp).getTime() - new Date(b.startTime || b.timestamp).getTime()
+  ));
+
+  // Build task-level weekly totals: taskName → [ms×7]
+  const taskMap = new Map();
+  state.log.forEach(entry => {
+    const startMs = new Date(entry.startTime || entry.timestamp).getTime();
+    if (isNaN(startMs)) return;
+    const idx = boundaries.findIndex(b => startMs >= b.start && startMs < b.end);
+    if (idx === -1) return;
+    const endMs = entry.endTime ? new Date(entry.endTime).getTime() : Date.now();
+    const ms = Math.max(0, endMs - startMs);
+    if (!taskMap.has(entry.taskName)) taskMap.set(entry.taskName, new Array(7).fill(0));
+    taskMap.get(entry.taskName)[idx] += ms;
+  });
+
+  const fmtShort = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const fmtFull  = d => d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  const rangeStr = `${fmtShort(days[0])} – ${fmtShort(days[6])}, ${days[6].getFullYear()}`;
+  const generatedStr = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+  function fmtMs(ms) {
+    if (!ms || ms <= 0) return '—';
+    if (ms < 60000) return '< 1m';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    return `${m}m`;
+  }
+
+  function fmtHM(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Day totals
+  const dayTotalMs = days.map((_, i) =>
+    [...taskMap.values()].reduce((s, arr) => s + arr[i], 0)
+  );
+  const grandTotal = dayTotalMs.reduce((s, ms) => s + ms, 0);
+
+  // ── Summary table rows ────────────────────────────────────
+  const sortedTasks = [...taskMap.keys()].sort((a, b) => a.localeCompare(b));
+  let summaryRows = '';
+  sortedTasks.forEach(name => {
+    const arr = taskMap.get(name);
+    const rowTotal = arr.reduce((s, ms) => s + ms, 0);
+    const cells = arr.map(ms => `<td>${ms ? fmtMs(ms) : '<span class="nil">—</span>'}</td>`).join('');
+    summaryRows += `<tr><td class="name-col">${esc(name)}</td>${cells}<td class="total-col">${fmtMs(rowTotal)}</td></tr>`;
+  });
+
+  const dayTotalCells = dayTotalMs.map(ms => `<td><strong>${ms ? fmtMs(ms) : '—'}</strong></td>`).join('');
+
+  // ── Day breakdown sections ────────────────────────────────
+  let dayHTML = '';
+  days.forEach((day, i) => {
+    const entries = dayEntries[i];
+    if (entries.length === 0) return;
+    const dayMs = dayTotalMs[i];
+    let rows = '';
+    entries.forEach(entry => {
+      const startIso = entry.startTime || entry.timestamp;
+      const endMs = entry.endTime ? new Date(entry.endTime).getTime() : null;
+      const durMs = endMs ? Math.max(0, endMs - new Date(startIso).getTime()) : null;
+      rows += `<tr>
+        <td class="name-col">${esc(entry.taskName)}</td>
+        <td>${esc(entry.category || '')}</td>
+        <td class="time-col">${fmtHM(startIso)}</td>
+        <td class="time-col">${entry.endTime ? fmtHM(entry.endTime) : '…'}</td>
+        <td class="dur-col">${durMs !== null ? fmtMs(durMs) : '…'}</td>
+      </tr>`;
+    });
+    dayHTML += `
+      <div class="day-section">
+        <h3>${fmtFull(day)}</h3>
+        <table>
+          <thead><tr>
+            <th class="name-col">Task</th><th>Category</th>
+            <th class="time-col">Start</th><th class="time-col">End</th>
+            <th class="dur-col">Duration</th>
+          </tr></thead>
+          <tbody>
+            ${rows}
+            <tr class="day-total">
+              <td colspan="4">Day total</td>
+              <td class="dur-col"><strong>${fmtMs(dayMs)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+  });
+
+  const hasData = grandTotal > 0;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HamsterWheel – Weekly Report ${rangeStr}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; color: #1a1915; line-height: 1.5;
+    padding: 32px 40px;
+  }
+  .report-header { margin-bottom: 28px; border-bottom: 2px solid #e0ddd6; padding-bottom: 16px; }
+  .report-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .report-header .range { font-size: 15px; color: #444; margin-bottom: 4px; }
+  .report-header .generated { font-size: 12px; color: #888; }
+  section { margin-bottom: 32px; }
+  section > h2 { font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #7a7870; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid #e0ddd6; }
+  th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+       color: #7a7870; background: #f5f4f0; white-space: nowrap; }
+  .name-col { min-width: 140px; }
+  .time-col { text-align: center; white-space: nowrap; }
+  .dur-col  { text-align: right;  white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .total-col { text-align: right; font-weight: 700; border-left: 1px solid #e0ddd6;
+               font-variant-numeric: tabular-nums; }
+  .totals-row td { border-top: 2px solid #c0bdb6; background: #f0efe9; font-weight: 700; }
+  .nil { color: #c8c5be; }
+  .day-section { margin-bottom: 24px; page-break-inside: avoid; }
+  .day-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px;
+                    padding-bottom: 4px; border-bottom: 1px solid #e0ddd6; }
+  .day-total td { background: #f5f4f0; font-size: 12px; color: #555; border-top: 1px solid #c0bdb6; }
+  .empty { color: #888; font-size: 13px; }
+  @media print {
+    body { padding: 16px 20px; }
+    .no-print { display: none; }
+    .day-section { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="report-header">
+  <h1>🐹 HamsterWheel – Weekly Report</h1>
+  <p class="range">${esc(rangeStr)}</p>
+  <p class="generated">Generated ${esc(generatedStr)}</p>
+</div>
+
+${hasData ? `
+<section>
+  <h2>Weekly Summary by Task</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="name-col">Task</th>
+        ${DAY_SHORT.map(d => `<th class="dur-col">${d}</th>`).join('')}
+        <th class="total-col">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${summaryRows}
+      <tr class="totals-row">
+        <td>Total</td>
+        ${dayTotalCells}
+        <td class="total-col"><strong>${fmtMs(grandTotal)}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Daily Breakdown</h2>
+  ${dayHTML || '<p class="empty">No entries this week.</p>'}
+</section>
+` : '<p class="empty">No time tracked this week.</p>'}
+
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Please allow pop-ups for this page to generate the PDF report.'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
 }
 
 // ============================================================

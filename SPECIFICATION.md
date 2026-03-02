@@ -61,7 +61,7 @@ All state is stored as a single JSON object in `localStorage` under the key `ham
 
 - A countdown runs continuously in the page header showing time until the next check-in.
 - When the interval elapses, a modal popup opens and the countdown resets.
-- The interval is configurable in settings (1–480 minutes, default 30).
+- The interval is configurable in settings (1–480 minutes, default 5).
 - A "Test check-in popup" button in settings triggers the popup immediately.
 - If the browser tab is hidden when the interval fires, a Web Notifications API alert is sent (requires permission). Clicking it focuses the tab and opens the modal.
 
@@ -160,12 +160,36 @@ Duration format: `30s` / `4m 22s` / `1h 05m`.
 - The active entry's contribution is included using `Date.now()` as the effective end time.
 - The table is horizontally scrollable on narrow viewports (`min-width: 460px`).
 - Re-renders on every `renderAll()` call (task start/stop, categorisation, log clear, check-in).
+- A **PDF** button in the card header triggers `generateWeekPDF()`.
 
-### 8. Settings
+### 8. PDF Report
+
+Invoked via the **PDF** button in the weekly report card header.
+
+- Opens a new browser tab containing a self-contained, print-ready HTML page.
+- Automatically triggers `window.print()` after a short delay (400 ms) to allow the page to render.
+- If the browser blocks the popup, an alert instructs the user to allow pop-ups.
+- The report contains two sections:
+
+#### Weekly Summary by Task
+A table with one row per unique task name and one column per day of the current week, plus a **Total** column and a **Total** footer row. Values are formatted with `formatDurShort` (same as the on-screen week table). Empty cells show `—`.
+
+#### Daily Breakdown
+One subsection per day that has at least one log entry. Each subsection contains:
+- Day heading (full weekday name + date).
+- A table of all log entries for that day, sorted ascending by start time: task name, category, start time (HH:MM), end time (HH:MM or `…` if still running), duration.
+- A "Day total" footer row.
+
+Each day subsection carries `page-break-inside: avoid` so entries are not split across pages when printing.
+
+- All user-generated text is set via `textContent` / `esc()` — no HTML injection path.
+- The report is generated entirely client-side from `state`; no data leaves the machine.
+
+### 9. Settings
 
 | Setting | Range | Default |
 |---|---|---|
-| Check-in interval | 1–480 min | 30 min |
+| Check-in interval | 1–480 min | 5 min |
 | Task retention | 1–365 days | 7 days |
 
 Saving settings restarts the countdown timer from zero.
@@ -205,6 +229,7 @@ Saving settings restarts the countdown timer from zero.
 | `openNameEditor(entryId)` | Show inline name input for a log entry |
 | `setEntryName(entryId, name)` | Persist a renamed log entry task name |
 | `buildWeekData(days)` | Aggregate log entries into a category × day ms matrix |
+| `generateWeekPDF()` | Open a print-ready report tab and trigger `window.print()` |
 | `exportData()` | Download current state as a JSON file |
 | `importData(event)` | Validate and restore state from an uploaded JSON file |
 | `renderAll()` | Re-render active card, task list, log, and week report |
