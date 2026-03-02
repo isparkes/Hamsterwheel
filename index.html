@@ -594,6 +594,46 @@
       font-size: 13px;
     }
 
+    .log-gap-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 16px;
+      background: var(--surface2);
+      border-bottom: 1px dashed var(--border);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .log-gap-label {
+      flex: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .btn-close-gap {
+      opacity: 0;
+      font-size: 11px;
+      padding: 2px 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: inherit;
+      transition: opacity 0.1s, background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+
+    .log-gap-row:hover .btn-close-gap {
+      opacity: 1;
+    }
+
+    .btn-close-gap:hover {
+      background: var(--accent-light);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
     /* ---- Week report ---- */
     .week-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
@@ -977,7 +1017,7 @@
       <button class="btn btn-primary" onclick="startNewTaskFromModal()">Add & start</button>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="dismissModal()">Skip</button>
+      <button class="btn btn-ghost" onclick="dismissModal()">Continue</button>
     </div>
   </div>
 </div>
@@ -1517,19 +1557,21 @@ function deleteLogEntry(id) {
   renderAll();
 }
 
-function toggleAddEntryPanel() {
+function toggleAddEntryPanel(startIso, endIso) {
   const panel = document.getElementById('addEntryPanel');
-  if (panel.style.display !== 'none') {
+  const prefilling = startIso && endIso;
+  if (!prefilling && panel.style.display !== 'none') {
     panel.style.display = 'none';
     return;
   }
   document.getElementById('addEntryTask').value = '';
-  document.getElementById('addEntryStart').value = formatDateTimeLocal(new Date().toISOString());
-  document.getElementById('addEntryEnd').value = '';
+  document.getElementById('addEntryStart').value = formatDateTimeLocal(startIso || new Date().toISOString());
+  document.getElementById('addEntryEnd').value = endIso ? formatDateTimeLocal(endIso) : '';
   const dl = document.getElementById('addEntryTaskList');
   dl.innerHTML = '';
   state.tasks.forEach(t => { const o = document.createElement('option'); o.value = t.name; dl.appendChild(o); });
   panel.style.display = 'flex';
+  if (prefilling) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   setTimeout(() => document.getElementById('addEntryTask').focus(), 50);
 }
 
@@ -1576,6 +1618,24 @@ function saveManualEntry() {
 // Log
 // ============================================================
 
+function closeGapExtendEnd(entryId, newEndIso) {
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  entry.endTime = newEndIso;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
+function closeGapPullStart(entryId, newStartIso) {
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  entry.startTime = newStartIso;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
 function formatTime(isoStr) {
   const date = new Date(isoStr);
   const isToday = date.toDateString() === new Date().toDateString();
@@ -1606,7 +1666,8 @@ function renderLog() {
     return;
   }
 
-  state.log.slice(0, 100).forEach(entry => {
+  const visibleEntries = state.log.slice(0, 100);
+  visibleEntries.forEach((entry, i) => {
     const isActive = entry.id === state.active.entryId;
     const isPickerOpen = entry.id === activeCategoryEntryId;
     const isEditingStart = entry.id === activeTimeEditEntryId && activeTimeEditField === 'start';
@@ -1769,6 +1830,48 @@ function renderLog() {
     }
 
     list.appendChild(li);
+
+    // Gap indicator between this entry and the next (older) entry
+    const nextEntry = visibleEntries[i + 1];
+    if (nextEntry && !isActive) {
+      const thisStartMs = new Date(entry.startTime || entry.timestamp).getTime();
+      const nextEndMs = nextEntry.endTime ? new Date(nextEntry.endTime).getTime() : NaN;
+      if (!isNaN(thisStartMs) && !isNaN(nextEndMs) && thisStartMs - nextEndMs > 60000) {
+        const gapMs = thisStartMs - nextEndMs;
+        const gapLi = document.createElement('li');
+        gapLi.className = 'log-gap-row';
+
+        const label = document.createElement('span');
+        label.className = 'log-gap-label';
+        label.textContent = `↕ ${formatDuration(gapMs)} gap`;
+        gapLi.appendChild(label);
+
+        const extendBtn = document.createElement('button');
+        extendBtn.className = 'btn-close-gap';
+        extendBtn.textContent = 'Extend end ↑';
+        extendBtn.title = 'Extend the end of the entry below to close this gap';
+        extendBtn.addEventListener('click', () => closeGapExtendEnd(nextEntry.id, entry.startTime || entry.timestamp));
+        gapLi.appendChild(extendBtn);
+
+        const pullBtn = document.createElement('button');
+        pullBtn.className = 'btn-close-gap';
+        pullBtn.textContent = '↓ Pull start';
+        pullBtn.title = 'Pull the start of the entry above back to close this gap';
+        pullBtn.addEventListener('click', () => closeGapPullStart(entry.id, nextEntry.endTime));
+        gapLi.appendChild(pullBtn);
+
+        const fillBtn = document.createElement('button');
+        fillBtn.className = 'btn-close-gap';
+        fillBtn.textContent = '+ Fill gap';
+        fillBtn.title = 'Add a new entry to fill this gap';
+        const gapStartIso = nextEntry.endTime;
+        const gapEndIso = entry.startTime || entry.timestamp;
+        fillBtn.addEventListener('click', () => toggleAddEntryPanel(gapStartIso, gapEndIso));
+        gapLi.appendChild(fillBtn);
+
+        list.appendChild(gapLi);
+      }
+    }
   });
 }
 
