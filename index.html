@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HamsterWheel - Time Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f4f0;
+      --surface: #ffffff;
+      --surface2: #f0efe9;
+      --border: #e0ddd6;
+      --text: #1a1915;
+      --text-muted: #7a7870;
+      --accent: #d4691e;
+      --accent-hover: #b85a18;
+      --accent-light: #fdf0e8;
+      --green: #2d7a3a;
+      --green-light: #eaf4ec;
+      --green-border: #a8d5b0;
+      --red: #c0392b;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 10px 40px rgba(0,0,0,0.15);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ---- Layout ---- */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-icon { font-size: 20px; }
+
+    .header-actions { display: flex; align-items: center; gap: 8px; }
+
+    .timer-badge {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ---- Cards ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+    }
+
+    .card-title {
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    /* ---- Active tracking card ---- */
+    #activeCard {
+      border-color: var(--green-border);
+      background: var(--green-light);
+    }
+
+    #activeCard .card-header {
+      background: var(--green-light);
+      border-bottom-color: var(--green-border);
+    }
+
+    #activeCard .card-title { color: var(--green); }
+
+    .active-body {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .active-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    .active-task-name {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .active-duration {
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      color: var(--green);
+      font-weight: 600;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* ---- Buttons ---- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      font-family: inherit;
+      line-height: 1;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: transparent;
+    }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+
+    .btn-outline {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-outline:hover { background: var(--surface2); }
+
+    .btn-stop {
+      background: var(--surface);
+      color: var(--red);
+      border-color: var(--green-border);
+    }
+    .btn-stop:hover { background: #fdecea; border-color: var(--red); }
+
+    .btn-icon {
+      padding: 6px;
+      border-radius: 6px;
+      aspect-ratio: 1;
+    }
+
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+    /* ---- Settings panel ---- */
+    .settings-panel {
+      display: none;
+      padding: 16px;
+      gap: 16px;
+      flex-direction: column;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .settings-panel.open { display: flex; }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .settings-row label {
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .settings-row input[type="number"] {
+      width: 70px;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .settings-row input[type="number"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
+    }
+
+    /* ---- Task list ---- */
+    .task-list { list-style: none; }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      transition: background 0.1s, border-left-color 0.1s;
+    }
+    .task-item:last-child { border-bottom: none; }
+    .task-item:hover { background: var(--surface2); }
+    .task-item.is-active {
+      background: var(--green-light);
+      border-left-color: var(--green);
+    }
+    .task-item.is-active:hover { background: #d8efdc; }
+
+    .task-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    .badge-recurring {
+      background: var(--green-light);
+      color: var(--green);
+    }
+
+    .badge-expiry {
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+
+    .badge-expired {
+      background: #fdecea;
+      color: var(--red);
+    }
+
+    .task-actions { display: flex; gap: 4px; align-items: center; }
+
+    .btn-play {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: transparent;
+      padding: 4px 6px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .btn-play:hover { background: var(--accent-light); color: var(--accent); }
+    .task-item.is-active .btn-play { color: var(--green); }
+
+    /* ---- Add task form ---- */
+    .add-task-form {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      background: var(--surface2);
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
+    .form-group input[type="text"] {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+      min-width: 180px;
+    }
+
+    .form-group input[type="text"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text);
+      padding-top: 18px;
+    }
+
+    .toggle-label input { display: none; }
+
+    .toggle {
+      width: 32px;
+      height: 18px;
+      background: var(--border);
+      border-radius: 9px;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: left 0.2s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .toggle-label input:checked + .toggle { background: var(--green); }
+    .toggle-label input:checked + .toggle::after { left: 16px; }
+
+    /* ---- Log ---- */
+    .log-list { list-style: none; max-height: 360px; overflow-y: auto; transition: max-height 0.2s ease, opacity 0.2s ease; }
+    .log-list.collapsed { max-height: 0; overflow: hidden; opacity: 0; }
+
+    /* ---- Collapsible task body ---- */
+    #taskBody { overflow: hidden; transition: max-height 0.2s ease, opacity 0.2s ease; max-height: 2000px; opacity: 1; }
+    #taskBody.collapsed { max-height: 0; opacity: 0; }
+
+    .log-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-item.is-active { background: var(--green-light); }
+
+    .log-task-col {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .log-task {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: text;
+      border-radius: 3px;
+    }
+    .log-task:hover { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; }
+
+    .log-task-input {
+      font-family: inherit;
+      font-size: 13px;
+      padding: 1px 5px;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      width: 100%;
+      outline: none;
+    }
+
+    .log-cat {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      align-self: flex-start;
+      line-height: 1.6;
+    }
+    .log-cat:hover { opacity: 0.75; }
+
+    .log-cat-add {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: transparent;
+      border: 1px dashed var(--border);
+      cursor: pointer;
+      font-family: inherit;
+      align-self: flex-start;
+      line-height: 1.6;
+    }
+    .log-cat-add:hover { background: var(--surface2); color: var(--text); border-style: solid; }
+
+    /* Category picker — spans all grid columns as a 2nd row inside the log item */
+    .cat-picker-row {
+      grid-column: 1 / -1;
+      padding: 6px 0 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .cat-input {
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+      width: 100%;
+    }
+    .cat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+    .cat-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+    .cat-chip {
+      padding: 2px 9px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      line-height: 1.6;
+    }
+    .cat-chip:hover { opacity: 0.8; }
+
+    .cat-chip-clear {
+      background: var(--surface2) !important;
+      color: var(--text-muted) !important;
+    }
+    .cat-chip-clear:hover { background: #fdecea !important; color: var(--red) !important; }
+
+    .log-time {
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .log-arrow { color: var(--text-muted); font-size: 11px; }
+
+    .log-duration {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      min-width: 52px;
+      text-align: right;
+    }
+    .log-item.is-active .log-duration { color: var(--green); }
+
+    .log-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.6s ease-in-out infinite;
+      vertical-align: middle;
+    }
+
+    .log-empty {
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ---- Week report ---- */
+    .week-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .week-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      min-width: 460px;
+    }
+
+    .week-table th, .week-table td {
+      padding: 8px 10px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .week-table thead th {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      background: var(--surface2);
+    }
+
+    .wc-cat { text-align: left !important; min-width: 120px; }
+    .wc-total { border-left: 1px solid var(--border); font-variant-numeric: tabular-nums; font-weight: 600; }
+    .wc-cell { font-variant-numeric: tabular-nums; }
+    .wc-dur { font-weight: 500; }
+    .wc-nil { color: var(--border); }
+    .wc-today { background: var(--accent-light) !important; }
+    thead .wc-today { color: var(--accent); }
+    .wc-day-num { font-weight: 400; font-size: 11px; opacity: 0.7; display: block; }
+
+    .wc-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .wc-uncat { font-size: 12px; color: var(--text-muted); }
+
+    .wc-totals-row td {
+      border-top: 2px solid var(--border);
+      background: var(--surface2);
+      font-weight: 600;
+    }
+
+    .week-empty-state {
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ---- Popup modal ---- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+      backdrop-filter: blur(2px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+
+    .modal-overlay.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: var(--surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 400px;
+      overflow: hidden;
+      transform: scale(0.95) translateY(8px);
+      transition: transform 0.15s;
+    }
+
+    .modal-overlay.visible .modal { transform: scale(1) translateY(0); }
+
+    .modal-header {
+      padding: 20px 20px 12px;
+      text-align: center;
+    }
+
+    .modal-icon { font-size: 32px; margin-bottom: 8px; }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .modal-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .modal-tasks {
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .modal-task-btn {
+      width: 100%;
+      text-align: left;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .modal-task-btn:hover {
+      background: var(--accent-light);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .modal-task-btn.is-active {
+      background: var(--green-light);
+      border-color: var(--green-border);
+      color: var(--green);
+    }
+
+    .modal-task-btn.is-active:hover {
+      background: #d8efdc;
+      border-color: var(--green);
+    }
+
+    .modal-new-task {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+
+    .modal-new-task input {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .modal-new-task input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
+    }
+
+    .modal-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* ---- Empty states ---- */
+    .empty-state {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .empty-state p { margin-top: 6px; }
+
+    /* ---- Notification bar ---- */
+    .notif-bar {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      display: none;
+      align-items: center;
+      gap: 8px;
+      z-index: 50;
+    }
+    .notif-bar.show { display: flex; }
+
+    svg { display: block; }
+
+    @media (max-width: 480px) {
+      header { padding: 0 12px; }
+      main { padding: 16px 8px; }
+      .log-item { grid-template-columns: 1fr auto auto auto; }
+      .log-arrow { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-icon">🐹</span>
+    HamsterWheel
+  </div>
+  <div class="header-actions">
+    <span class="timer-badge" id="timerDisplay">Next check-in: --:--</span>
+    <button class="btn btn-ghost btn-icon" onclick="toggleSettings()" title="Settings" aria-label="Settings">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="8" cy="8" r="2.5"/>
+        <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- Active tracking card -->
+  <div class="card" id="activeCard" style="display:none">
+    <div class="card-header">
+      <span class="card-title">Now tracking</span>
+      <button class="btn btn-stop btn-sm" onclick="stopCurrentTask()">Stop</button>
+    </div>
+    <div class="active-body">
+      <span class="active-dot"></span>
+      <span class="active-task-name" id="activeTaskName">—</span>
+      <span class="active-duration" id="activeDuration">0s</span>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card" id="settingsCard" style="display:none">
+    <div class="card-header">
+      <span class="card-title">Settings</span>
+    </div>
+    <div class="settings-panel open">
+      <div class="settings-row">
+        <label for="intervalInput">Check-in every</label>
+        <input type="number" id="intervalInput" min="1" max="480" value="30">
+        <label>minutes</label>
+      </div>
+      <div class="settings-row">
+        <label for="retentionInput">Keep non-recurring tasks for</label>
+        <input type="number" id="retentionInput" min="1" max="365" value="7">
+        <label>days after last use</label>
+      </div>
+      <div class="settings-row">
+        <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save settings</button>
+        <button class="btn btn-ghost btn-sm" onclick="triggerCheckin()">Test check-in popup</button>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:0 -16px;width:calc(100% + 32px)">
+      <div class="settings-row">
+        <label style="flex:1;color:var(--text-muted);font-size:13px">Backup &amp; restore</label>
+        <button class="btn btn-outline btn-sm" onclick="exportData()">Download backup</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFile').click()">Restore from file</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks -->
+  <div class="card" id="taskCard">
+    <div class="card-header" style="cursor:pointer" onclick="toggleTasks(event)" title="Click to collapse">
+      <span class="card-title">
+        <span id="taskChevron" style="display:inline-block;transition:transform 0.2s;margin-right:5px;font-style:normal;font-size:10px">▼</span>
+        Tasks
+      </span>
+    </div>
+    <div id="taskBody">
+    <ul class="task-list" id="taskList"></ul>
+    <form class="add-task-form" onsubmit="addTask(event)">
+      <div class="form-group">
+        <label for="newTaskInput">New task</label>
+        <input type="text" id="newTaskInput" placeholder="What will you work on?" autocomplete="off">
+      </div>
+      <label class="toggle-label">
+        <input type="checkbox" id="newTaskRecurring">
+        <span class="toggle"></span>
+        Recurring
+      </label>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-end">Add task</button>
+    </form>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card" id="logCard">
+    <div class="card-header" style="cursor:pointer" onclick="toggleLog(event)" title="Click to collapse">
+      <span class="card-title">
+        <span id="logChevron" style="display:inline-block;transition:transform 0.2s;margin-right:5px;font-style:normal;font-size:10px">▼</span>
+        Time log
+      </span>
+      <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear log</button>
+    </div>
+    <ul class="log-list" id="logList"></ul>
+  </div>
+
+  <!-- Week report -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">This week</span>
+      <span id="weekRangeLabel" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
+    <div id="weekReport"></div>
+  </div>
+</main>
+
+<!-- Check-in modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon">⏰</div>
+      <div class="modal-title">What are you working on?</div>
+      <div class="modal-subtitle" id="modalSubtitle">Time for a quick check-in</div>
+    </div>
+    <div class="modal-tasks" id="modalTasks"></div>
+    <div class="modal-new-task">
+      <input type="text" id="modalNewTask" placeholder="Or type a new task…" autocomplete="off"
+             onkeydown="if(event.key==='Enter') startNewTaskFromModal()">
+      <button class="btn btn-primary" onclick="startNewTaskFromModal()">Add & start</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="dismissModal()">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notification bar -->
+<div class="notif-bar" id="notifBar">
+  <span>🔔</span>
+  <span id="notifText">Check-in time!</span>
+  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('notifBar').classList.remove('show')">✕</button>
+</div>
+
+<script>
+// ============================================================
+// State & Storage
+// ============================================================
+
+const STORAGE_KEY = 'hamster_data';
+
+function loadData() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || getDefaultData();
+    if (!data.active) data.active = { taskId: null, entryId: null };
+    if (!data.categories) data.categories = [];
+    return data;
+  } catch { return getDefaultData(); }
+}
+
+function getDefaultData() {
+  return {
+    settings: { intervalMinutes: 30, retentionDays: 7 },
+    tasks: [],
+    log: [],
+    active: { taskId: null, entryId: null },
+    categories: []
+  };
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let state = loadData();
+
+let activeCategoryEntryId = null;
+let activeNameEditEntryId = null;
+
+const CAT_PALETTE = [
+  { bg: '#ede9fe', fg: '#5b21b6' },
+  { bg: '#dbeafe', fg: '#1e40af' },
+  { bg: '#dcfce7', fg: '#166534' },
+  { bg: '#ffedd5', fg: '#9c2d10' },
+  { bg: '#fce7f3', fg: '#831843' },
+  { bg: '#ccfbf1', fg: '#134e4a' },
+  { bg: '#fef9c3', fg: '#854d0e' },
+  { bg: '#fee2e2', fg: '#991b1b' },
+];
+
+function catStyle(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+  const c = CAT_PALETTE[h % CAT_PALETTE.length];
+  return `background:${c.bg};color:${c.fg}`;
+}
+
+// ============================================================
+// Timer (check-in countdown)
+// ============================================================
+
+let timerIntervalId = null;
+let nextCheckinAt = null;
+let countdownId = null;
+
+function startTimer() {
+  clearInterval(timerIntervalId);
+  clearInterval(countdownId);
+
+  const ms = state.settings.intervalMinutes * 60 * 1000;
+  nextCheckinAt = Date.now() + ms;
+
+  timerIntervalId = setInterval(() => {
+    nextCheckinAt = Date.now() + ms;
+    triggerCheckin();
+  }, ms);
+
+  updateCountdown();
+  countdownId = setInterval(updateCountdown, 1000);
+}
+
+function updateCountdown() {
+  if (!nextCheckinAt) return;
+  const diff = Math.max(0, Math.round((nextCheckinAt - Date.now()) / 1000));
+  const m = Math.floor(diff / 60).toString().padStart(2, '0');
+  const s = (diff % 60).toString().padStart(2, '0');
+  document.getElementById('timerDisplay').textContent = `Next check-in: ${m}:${s}`;
+  updateActiveDuration();
+}
+
+// ============================================================
+// Active task tracking
+// ============================================================
+
+function startTask(taskId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  // Same task already active — just dismiss
+  if (state.active.taskId === taskId) {
+    dismissModal();
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  // Close current entry if any
+  if (state.active.entryId) {
+    const currentEntry = state.log.find(e => e.id === state.active.entryId);
+    if (currentEntry && !currentEntry.endTime) {
+      currentEntry.endTime = now;
+    }
+  }
+
+  // Create new entry
+  const entry = {
+    id: crypto.randomUUID(),
+    taskId,
+    taskName: task.name,
+    startTime: now,
+    endTime: null
+  };
+  state.log.unshift(entry);
+
+  // Update active pointer and task's last-used time
+  task.lastUsed = now;
+  state.active = { taskId, entryId: entry.id };
+
+  saveData();
+  renderAll();
+  dismissModal();
+}
+
+function stopCurrentTask() {
+  if (!state.active.entryId) return;
+
+  const entry = state.log.find(e => e.id === state.active.entryId);
+  if (entry && !entry.endTime) {
+    entry.endTime = new Date().toISOString();
+  }
+
+  state.active = { taskId: null, entryId: null };
+  saveData();
+  renderAll();
+}
+
+function updateActiveDuration() {
+  if (!state.active.entryId) return;
+  const entry = state.log.find(e => e.id === state.active.entryId);
+  if (!entry || entry.endTime) return;
+
+  const ms = Date.now() - new Date(entry.startTime).getTime();
+  const durStr = formatDuration(ms);
+
+  // Update active card
+  const durEl = document.getElementById('activeDuration');
+  if (durEl) durEl.textContent = durStr;
+
+  // Update live duration in log without re-rendering the whole list
+  const logDurEl = document.querySelector(`[data-entry-id="${state.active.entryId}"] .log-duration`);
+  if (logDurEl) logDurEl.textContent = durStr;
+}
+
+function renderActiveCard() {
+  const card = document.getElementById('activeCard');
+  if (!state.active.taskId) {
+    card.style.display = 'none';
+    return;
+  }
+
+  const task = state.tasks.find(t => t.id === state.active.taskId);
+  const entry = state.log.find(e => e.id === state.active.entryId);
+  if (!task || !entry) { card.style.display = 'none'; return; }
+
+  card.style.display = 'block';
+  document.getElementById('activeTaskName').textContent = task.name;
+
+  const ms = Date.now() - new Date(entry.startTime).getTime();
+  document.getElementById('activeDuration').textContent = formatDuration(ms);
+}
+
+// ============================================================
+// Check-in modal
+// ============================================================
+
+function triggerCheckin() {
+  showNotification();
+  pruneExpiredTasks();
+  renderAll();
+  openModal();
+}
+
+function openModal() {
+  const overlay = document.getElementById('modalOverlay');
+  const tasksEl = document.getElementById('modalTasks');
+  const subtitle = document.getElementById('modalSubtitle');
+
+  // Subtitle: show current tracking status or current time
+  if (state.active.taskId) {
+    const activeTask = state.tasks.find(t => t.id === state.active.taskId);
+    const activeEntry = state.log.find(e => e.id === state.active.entryId);
+    let durStr = '';
+    if (activeEntry) {
+      durStr = ` · ${formatDuration(Date.now() - new Date(activeEntry.startTime).getTime())}`;
+    }
+    const name = activeTask ? activeTask.name : 'unknown';
+    subtitle.textContent = `Tracking: ${name}${durStr} — switch tasks?`;
+  } else {
+    const now = new Date();
+    subtitle.textContent = `It's ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} — what are you working on?`;
+  }
+
+  tasksEl.innerHTML = '';
+
+  if (state.tasks.length === 0) {
+    tasksEl.innerHTML = '<p style="padding:16px;color:var(--text-muted);text-align:center;font-size:13px">No tasks yet — type one below</p>';
+  } else {
+    state.tasks.forEach(task => {
+      const isActive = task.id === state.active.taskId;
+      const btn = document.createElement('button');
+      btn.className = 'modal-task-btn' + (isActive ? ' is-active' : '');
+
+      const leftSpan = document.createElement('span');
+      leftSpan.textContent = (isActive ? '▶ ' : '') + task.name;
+
+      const rightSpan = document.createElement('span');
+      rightSpan.className = `badge ${task.recurring ? 'badge-recurring' : 'badge-expiry'}`;
+      rightSpan.textContent = task.recurring ? 'recurring' : 'one-off';
+
+      btn.appendChild(leftSpan);
+      btn.appendChild(rightSpan);
+
+      if (isActive) {
+        btn.title = 'Currently tracking — click to keep running';
+        btn.onclick = () => dismissModal();
+      } else {
+        btn.onclick = () => startTask(task.id);
+      }
+
+      tasksEl.appendChild(btn);
+    });
+  }
+
+  document.getElementById('modalNewTask').value = '';
+  overlay.classList.add('visible');
+  setTimeout(() => document.getElementById('modalNewTask').focus(), 150);
+}
+
+function dismissModal() {
+  document.getElementById('modalOverlay').classList.remove('visible');
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modalOverlay')) dismissModal();
+}
+
+function startNewTaskFromModal() {
+  const input = document.getElementById('modalNewTask');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  const task = createTask(name, false);
+  startTask(task.id);
+}
+
+// ============================================================
+// Tasks
+// ============================================================
+
+function createTask(name, recurring) {
+  const task = {
+    id: crypto.randomUUID(),
+    name,
+    recurring,
+    createdAt: new Date().toISOString(),
+    lastUsed: null
+  };
+  state.tasks.push(task);
+  saveData();
+  return task;
+}
+
+function addTask(e) {
+  e.preventDefault();
+  const name = document.getElementById('newTaskInput').value.trim();
+  if (!name) return;
+
+  createTask(name, document.getElementById('newTaskRecurring').checked);
+
+  document.getElementById('newTaskInput').value = '';
+  document.getElementById('newTaskRecurring').checked = false;
+  renderTasks();
+}
+
+function deleteTask(id) {
+  // If deleting the active task, stop tracking first
+  if (state.active.taskId === id) {
+    stopCurrentTask();
+  }
+  state.tasks = state.tasks.filter(t => t.id !== id);
+  saveData();
+  renderTasks();
+}
+
+function toggleRecurring(id) {
+  const task = state.tasks.find(t => t.id === id);
+  if (task) {
+    task.recurring = !task.recurring;
+    saveData();
+    renderTasks();
+  }
+}
+
+function pruneExpiredTasks() {
+  const retentionMs = state.settings.retentionDays * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  state.tasks = state.tasks.filter(task => {
+    if (task.recurring) return true;
+    if (task.id === state.active.taskId) return true; // never prune the active task
+    const ref = task.lastUsed ? new Date(task.lastUsed).getTime() : new Date(task.createdAt).getTime();
+    return (now - ref) < retentionMs;
+  });
+  saveData();
+}
+
+function getDaysUntilExpiry(task) {
+  if (task.recurring) return null;
+  const retentionMs = state.settings.retentionDays * 24 * 60 * 60 * 1000;
+  const ref = task.lastUsed ? new Date(task.lastUsed).getTime() : new Date(task.createdAt).getTime();
+  const remaining = retentionMs - (Date.now() - ref);
+  return Math.ceil(remaining / (24 * 60 * 60 * 1000));
+}
+
+function renderTasks() {
+  const list = document.getElementById('taskList');
+  list.innerHTML = '';
+
+  if (state.tasks.length === 0) {
+    list.innerHTML = '<li class="empty-state"><span style="font-size:24px">📋</span><p>No tasks yet. Add one below.</p></li>';
+    return;
+  }
+
+  state.tasks.forEach(task => {
+    const isActive = task.id === state.active.taskId;
+    const daysLeft = getDaysUntilExpiry(task);
+    const expiring = daysLeft !== null && daysLeft <= 2;
+
+    const li = document.createElement('li');
+    li.className = 'task-item' + (isActive ? ' is-active' : '');
+
+    let badge = '';
+    if (task.recurring) {
+      badge = `<span class="badge badge-recurring">recurring</span>`;
+    } else if (daysLeft !== null) {
+      const cls = expiring ? 'badge-expired' : 'badge-expiry';
+      badge = `<span class="badge ${cls}">${daysLeft}d left</span>`;
+    }
+
+    li.innerHTML = `
+      <span class="task-name" style="cursor:pointer" onclick="startTask('${task.id}')">${escHtml(task.name)}</span>
+      ${badge}
+      <div class="task-actions">
+        <button class="btn btn-play" title="${isActive ? 'Stop tracking' : 'Start tracking'}"
+                onclick="${isActive ? 'stopCurrentTask()' : `startTask('${task.id}')`}">
+          ${isActive ? '■' : '▶'}
+        </button>
+        <button class="btn btn-ghost btn-icon btn-sm" title="${task.recurring ? 'Switch to one-off' : 'Switch to recurring'}"
+                onclick="toggleRecurring('${task.id}')" style="font-size:13px">
+          ${task.recurring ? '🔁' : '📌'}
+        </button>
+        <button class="btn btn-ghost btn-icon btn-sm" title="Remove task"
+                onclick="deleteTask('${task.id}')" style="color:var(--red)">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3 3.5l.7 8a.5.5 0 0 0 .5.5h5.6a.5.5 0 0 0 .5-.5l.7-8"/>
+          </svg>
+        </button>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+}
+
+// ============================================================
+// Categories
+// ============================================================
+
+function openNameEditor(entryId) {
+  activeCategoryEntryId = null;
+  activeNameEditEntryId = entryId;
+  renderLog();
+  setTimeout(() => {
+    const input = document.querySelector('.log-task-input');
+    if (input) { input.focus(); input.select(); }
+  }, 30);
+}
+
+function closeNameEditor() {
+  activeNameEditEntryId = null;
+  renderLog();
+}
+
+function setEntryName(entryId, name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) { closeNameEditor(); return; }
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  entry.taskName = trimmed;
+  activeNameEditEntryId = null;
+  saveData();
+  renderLog();
+}
+
+function openCategoryPicker(entryId) {
+  activeNameEditEntryId = null;
+  activeCategoryEntryId = entryId;
+  renderLog();
+  setTimeout(() => {
+    const input = document.querySelector('.cat-input');
+    if (input) {
+      input.focus();
+      input.select();
+      input.closest('[data-entry-id]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 30);
+}
+
+function closeCategoryPicker() {
+  activeCategoryEntryId = null;
+  renderLog();
+}
+
+function setCategory(entryId, cat) {
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  const trimmed = (cat || '').trim() || null;
+  entry.category = trimmed;
+  if (trimmed) {
+    state.categories = [trimmed, ...state.categories.filter(c => c !== trimmed)].slice(0, 20);
+  }
+  activeCategoryEntryId = null;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
+// ============================================================
+// Log
+// ============================================================
+
+function formatTime(isoStr) {
+  const date = new Date(isoStr);
+  const isToday = date.toDateString() === new Date().toDateString();
+  if (isToday) {
+    return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  }
+  return date.toLocaleDateString([], {month: 'short', day: 'numeric'}) + ' ' +
+    date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+function formatDuration(ms) {
+  if (ms < 0) ms = 0;
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+function renderLog() {
+  const list = document.getElementById('logList');
+  list.innerHTML = '';
+
+  if (state.log.length === 0) {
+    list.innerHTML = '<li class="log-empty">No entries yet. Start tracking a task to begin logging.</li>';
+    return;
+  }
+
+  state.log.slice(0, 100).forEach(entry => {
+    const isActive = entry.id === state.active.entryId;
+    const isPickerOpen = entry.id === activeCategoryEntryId;
+
+    // Support old entries that only have `timestamp`
+    const startIso = entry.startTime || entry.timestamp;
+    const startStr = formatTime(startIso);
+
+    let endCell, durStr;
+    if (isActive) {
+      endCell = `<span class="log-dot"></span>`;
+      durStr = formatDuration(Date.now() - new Date(startIso).getTime());
+    } else {
+      endCell = entry.endTime
+        ? `<span class="log-time">${formatTime(entry.endTime)}</span>`
+        : `<span class="log-time" style="color:var(--text-muted)">—</span>`;
+      durStr = entry.endTime && entry.startTime
+        ? formatDuration(new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime())
+        : '';
+    }
+
+    const li = document.createElement('li');
+    li.className = 'log-item' + (isActive ? ' is-active' : '');
+    li.dataset.entryId = entry.id;
+
+    // Static grid cells (task col placeholder filled in below)
+    li.innerHTML = `
+      <span class="log-task-col"></span>
+      <span class="log-time">${startStr}</span>
+      <span class="log-arrow">→</span>
+      ${endCell}
+      <span class="log-duration">${durStr}</span>
+    `;
+
+    // Build task column: task name + category badge/picker
+    const taskCol = li.querySelector('.log-task-col');
+
+    if (activeNameEditEntryId === entry.id) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'log-task-input';
+      input.value = entry.taskName;
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); setEntryName(entry.id, e.target.value); }
+        else if (e.key === 'Escape') closeNameEditor();
+      });
+      input.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (activeNameEditEntryId !== entry.id) return;
+          const val = document.querySelector('.log-task-input')?.value?.trim();
+          if (val) setEntryName(entry.id, val);
+          else closeNameEditor();
+        }, 150);
+      });
+      taskCol.appendChild(input);
+    } else {
+      const taskSpan = document.createElement('span');
+      taskSpan.className = 'log-task';
+      taskSpan.title = 'Click to rename';
+      taskSpan.textContent = entry.taskName;
+      taskSpan.addEventListener('click', () => openNameEditor(entry.id));
+      taskCol.appendChild(taskSpan);
+    }
+
+    if (isPickerOpen) {
+      // Inline picker — rendered as a grid-spanning 2nd row
+      const pickerRow = document.createElement('div');
+      pickerRow.className = 'cat-picker-row';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'cat-input';
+      input.placeholder = 'Category name…';
+      input.value = entry.category || '';
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); setCategory(entry.id, e.target.value); }
+        else if (e.key === 'Escape') closeCategoryPicker();
+      });
+      input.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (activeCategoryEntryId !== entry.id) return;
+          const val = document.querySelector('.cat-input')?.value?.trim();
+          if (val) setCategory(entry.id, val);
+          else closeCategoryPicker();
+        }, 150);
+      });
+      pickerRow.appendChild(input);
+
+      if (state.categories.length > 0 || entry.category) {
+        const chipsDiv = document.createElement('div');
+        chipsDiv.className = 'cat-chips';
+
+        state.categories.slice(0, 10).forEach(cat => {
+          const btn = document.createElement('button');
+          btn.className = 'cat-chip';
+          btn.textContent = cat;
+          btn.style.cssText = catStyle(cat);
+          btn.addEventListener('mousedown', e => { e.preventDefault(); setCategory(entry.id, cat); });
+          chipsDiv.appendChild(btn);
+        });
+
+        if (entry.category) {
+          const clearBtn = document.createElement('button');
+          clearBtn.className = 'cat-chip cat-chip-clear';
+          clearBtn.textContent = '✕ clear';
+          clearBtn.addEventListener('mousedown', e => { e.preventDefault(); setCategory(entry.id, null); });
+          chipsDiv.appendChild(clearBtn);
+        }
+
+        pickerRow.appendChild(chipsDiv);
+      }
+
+      li.appendChild(pickerRow);
+    } else {
+      // Category badge or "+ tag" button
+      const catBtn = document.createElement('button');
+      if (entry.category) {
+        catBtn.className = 'log-cat';
+        catBtn.textContent = entry.category;
+        catBtn.style.cssText = catStyle(entry.category);
+      } else {
+        catBtn.className = 'log-cat-add';
+        catBtn.textContent = '+ tag';
+      }
+      catBtn.addEventListener('click', () => openCategoryPicker(entry.id));
+      taskCol.appendChild(catBtn);
+    }
+
+    list.appendChild(li);
+  });
+}
+
+function toggleLog(event) {
+  if (event.target.closest('button')) return; // don't collapse when Clear is clicked
+  const list = document.getElementById('logList');
+  const chevron = document.getElementById('logChevron');
+  const collapsed = list.classList.toggle('collapsed');
+  chevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
+}
+
+function toggleTasks(event) {
+  if (event.target.closest('button')) return;
+  const body = document.getElementById('taskBody');
+  const chevron = document.getElementById('taskChevron');
+  const collapsed = body.classList.toggle('collapsed');
+  chevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
+}
+
+function clearLog() {
+  if (!confirm('Clear all time log entries?')) return;
+  state.log = [];
+  state.active = { taskId: null, entryId: null };
+  saveData();
+  renderAll();
+}
+
+// ============================================================
+// Week report
+// ============================================================
+
+function getWeekDays() {
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((dow + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+
+function buildWeekData(days) {
+  // Map: category string | null → [ms × 7]
+  const map = new Map();
+  const boundaries = days.map(d => ({ start: d.getTime(), end: d.getTime() + 86400000 }));
+
+  state.log.forEach(entry => {
+    const startMs = new Date(entry.startTime || entry.timestamp).getTime();
+    if (isNaN(startMs)) return;
+    const dayIdx = boundaries.findIndex(b => startMs >= b.start && startMs < b.end);
+    if (dayIdx === -1) return;
+
+    const endMs = entry.endTime ? new Date(entry.endTime).getTime() : Date.now();
+    const ms = Math.max(0, endMs - startMs);
+    const cat = entry.category || null;
+    if (!map.has(cat)) map.set(cat, new Array(7).fill(0));
+    map.get(cat)[dayIdx] += ms;
+  });
+
+  return map;
+}
+
+function formatDurShort(ms) {
+  if (ms < 60000) return '< 1m';
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+function renderWeekReport() {
+  const container = document.getElementById('weekReport');
+  const days = getWeekDays();
+  const map = buildWeekData(days);
+
+  // Week range label
+  const rangeEl = document.getElementById('weekRangeLabel');
+  if (rangeEl) {
+    const fmt = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    rangeEl.textContent = `${fmt(days[0])} – ${fmt(days[6])}`;
+  }
+
+  if (map.size === 0) {
+    container.innerHTML = '<p class="week-empty-state">No tracked time this week yet.</p>';
+    return;
+  }
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
+
+  const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  // Sort categories: named first (alphabetical), null (uncategorized) last
+  const cats = [...map.keys()].sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a.localeCompare(b);
+  });
+
+  // Compute column totals
+  const dayTotals = new Array(7).fill(0);
+  cats.forEach(cat => map.get(cat).forEach((ms, i) => { dayTotals[i] += ms; }));
+  const grandTotal = dayTotals.reduce((s, ms) => s + ms, 0);
+
+  // Build table
+  const table = document.createElement('table');
+  table.className = 'week-table';
+
+  // ── Header ──────────────────────────────────────────────────
+  const thead = table.createTHead();
+  const hRow = thead.insertRow();
+  const thCat = document.createElement('th');
+  thCat.className = 'wc-cat';
+  hRow.appendChild(thCat);
+
+  days.forEach((d, i) => {
+    const th = document.createElement('th');
+    th.className = d.getTime() === todayMs ? 'wc-today' : '';
+    th.innerHTML = `${DAY[i]}<span class="wc-day-num">${d.getDate()}</span>`;
+    hRow.appendChild(th);
+  });
+
+  const thTotal = document.createElement('th');
+  thTotal.className = 'wc-total';
+  thTotal.textContent = 'Total';
+  hRow.appendChild(thTotal);
+
+  // ── Body rows ────────────────────────────────────────────────
+  const tbody = table.createTBody();
+
+  cats.forEach(cat => {
+    const dayMs = map.get(cat);
+    const rowTotal = dayMs.reduce((s, ms) => s + ms, 0);
+    const tr = tbody.insertRow();
+
+    // Category name cell
+    const tdCat = tr.insertCell();
+    tdCat.className = 'wc-cat';
+    if (cat === null) {
+      const span = document.createElement('span');
+      span.className = 'wc-uncat';
+      span.textContent = 'Uncategorized';
+      tdCat.appendChild(span);
+    } else {
+      const badge = document.createElement('span');
+      badge.className = 'wc-badge';
+      badge.style.cssText = catStyle(cat);
+      badge.textContent = cat;
+      tdCat.appendChild(badge);
+    }
+
+    // Day cells
+    days.forEach((d, i) => {
+      const td = tr.insertCell();
+      td.className = 'wc-cell' + (d.getTime() === todayMs ? ' wc-today' : '');
+      if (dayMs[i]) {
+        const span = document.createElement('span');
+        span.className = 'wc-dur';
+        span.textContent = formatDurShort(dayMs[i]);
+        td.appendChild(span);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'wc-nil';
+        span.textContent = '—';
+        td.appendChild(span);
+      }
+    });
+
+    // Row total
+    const tdTotal = tr.insertCell();
+    tdTotal.className = 'wc-total';
+    tdTotal.textContent = formatDurShort(rowTotal);
+  });
+
+  // ── Totals row ───────────────────────────────────────────────
+  const totRow = tbody.insertRow();
+  totRow.className = 'wc-totals-row';
+
+  const tdLabel = totRow.insertCell();
+  tdLabel.className = 'wc-cat';
+  tdLabel.textContent = 'Total';
+
+  days.forEach((d, i) => {
+    const td = totRow.insertCell();
+    td.className = 'wc-cell' + (d.getTime() === todayMs ? ' wc-today' : '');
+    if (dayTotals[i]) {
+      const strong = document.createElement('strong');
+      strong.textContent = formatDurShort(dayTotals[i]);
+      td.appendChild(strong);
+    } else {
+      const span = document.createElement('span');
+      span.className = 'wc-nil';
+      span.textContent = '—';
+      td.appendChild(span);
+    }
+  });
+
+  const tdGrand = totRow.insertCell();
+  tdGrand.className = 'wc-total';
+  const strong = document.createElement('strong');
+  strong.textContent = formatDurShort(grandTotal);
+  tdGrand.appendChild(strong);
+
+  // ── Wrap for horizontal scroll on narrow screens ─────────────
+  const wrap = document.createElement('div');
+  wrap.className = 'week-wrap';
+  wrap.appendChild(table);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+}
+
+// ============================================================
+// Render helper
+// ============================================================
+
+function renderAll() {
+  renderActiveCard();
+  renderTasks();
+  renderLog();
+  renderWeekReport();
+}
+
+// ============================================================
+// Settings
+// ============================================================
+
+function toggleSettings() {
+  const card = document.getElementById('settingsCard');
+  card.style.display = card.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveSettings() {
+  const interval = parseInt(document.getElementById('intervalInput').value);
+  const retention = parseInt(document.getElementById('retentionInput').value);
+
+  if (isNaN(interval) || interval < 1) { alert('Interval must be at least 1 minute'); return; }
+  if (isNaN(retention) || retention < 1) { alert('Retention must be at least 1 day'); return; }
+
+  state.settings.intervalMinutes = interval;
+  state.settings.retentionDays = retention;
+  saveData();
+  startTimer();
+  renderTasks();
+  document.getElementById('settingsCard').style.display = 'none';
+}
+
+// ============================================================
+// Backup & restore
+// ============================================================
+
+function exportData() {
+  const date = new Date().toISOString().slice(0, 10);
+  const json = JSON.stringify(state, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hamsterwheel-backup-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  // Reset the input so the same file can be re-selected if needed
+  event.target.value = '';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    let parsed;
+    try {
+      parsed = JSON.parse(e.target.result);
+    } catch {
+      alert('Could not read the file — make sure it is a valid HamsterWheel backup (.json).');
+      return;
+    }
+
+    // Basic structure check
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.log)) {
+      alert('This file does not look like a HamsterWheel backup.');
+      return;
+    }
+
+    if (!confirm(`Restore backup?\n\nThis will replace all current data with the backup (${parsed.log.length} log entries, ${parsed.tasks.length} tasks).\n\nYour current data will be overwritten.`)) return;
+
+    // Merge missing fields so old backups still work
+    if (!parsed.active) parsed.active = { taskId: null, entryId: null };
+    if (!parsed.categories) parsed.categories = [];
+    if (!parsed.settings) parsed.settings = getDefaultData().settings;
+
+    state = parsed;
+    activeCategoryEntryId = null;
+    saveData();
+    document.getElementById('intervalInput').value = state.settings.intervalMinutes;
+    document.getElementById('retentionInput').value = state.settings.retentionDays;
+    startTimer();
+    renderAll();
+    document.getElementById('settingsCard').style.display = 'none';
+  };
+  reader.readAsText(file);
+}
+
+// ============================================================
+// Browser notifications
+// ============================================================
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function showNotification() {
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    const n = new Notification('🐹 HamsterWheel check-in', {
+      body: 'Time to log what you\'re working on!',
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><text y="26" font-size="28">🐹</text></svg>'
+    });
+    n.onclick = () => { window.focus(); n.close(); openModal(); };
+  }
+}
+
+// ============================================================
+// Keyboard shortcuts
+// ============================================================
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') dismissModal();
+});
+
+// ============================================================
+// Utilities
+// ============================================================
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ============================================================
+// Init
+// ============================================================
+
+function init() {
+  document.getElementById('intervalInput').value = state.settings.intervalMinutes;
+  document.getElementById('retentionInput').value = state.settings.retentionDays;
+
+  pruneExpiredTasks();
+  renderAll();
+  startTimer();
+  requestNotificationPermission();
+}
+
+init();
+</script>
+</body>
+</html>
