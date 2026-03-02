@@ -818,6 +818,7 @@
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFile').click()">Restore from file</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
       </div>
+      <div style="width:100%;text-align:right;font-size:12px;color:var(--text-muted)">v<span id="versionDisplay"></span></div>
     </div>
   </div>
 
@@ -896,6 +897,8 @@
 </div>
 
 <script>
+const VERSION = '1.0.0';
+
 // ============================================================
 // State & Storage
 // ============================================================
@@ -1850,6 +1853,7 @@ function escHtml(str) {
 // ============================================================
 
 function init() {
+  document.getElementById('versionDisplay').textContent = VERSION;
   document.getElementById('intervalInput').value = state.settings.intervalMinutes;
   document.getElementById('retentionInput').value = state.settings.retentionDays;
 
