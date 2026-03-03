@@ -816,7 +816,39 @@
       padding: 12px 16px;
       border-top: 1px solid var(--border);
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .modal-snooze {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .modal-snooze-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .btn-snooze {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .btn-snooze:hover {
+      background: var(--bg);
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     /* ---- Empty states ---- */
@@ -1029,6 +1061,12 @@
       <button class="btn btn-primary" onclick="startNewTaskFromModal()">Add & start</button>
     </div>
     <div class="modal-footer">
+      <div class="modal-snooze">
+        <span class="modal-snooze-label">Skip for:</span>
+        <button class="btn-snooze" onclick="snoozeCheckin(15)">15m</button>
+        <button class="btn-snooze" onclick="snoozeCheckin(30)">30m</button>
+        <button class="btn-snooze" onclick="snoozeCheckin(60)">1h</button>
+      </div>
       <button class="btn btn-ghost" onclick="dismissModal()">Continue</button>
     </div>
   </div>
@@ -1157,13 +1195,17 @@ function startTask(taskId) {
     }
   }
 
+  // Inherit category from most recent previous entry for this task
+  const prevEntry = state.log.find(e => e.taskId === taskId && e.category);
+
   // Create new entry
   const entry = {
     id: crypto.randomUUID(),
     taskId,
     taskName: task.name,
     startTime: now,
-    endTime: null
+    endTime: null,
+    ...(prevEntry?.category ? { category: prevEntry.category } : {})
   };
   state.log.unshift(entry);
 
@@ -1295,6 +1337,22 @@ function openModal() {
 function dismissModal() {
   document.getElementById('modalOverlay').classList.remove('visible');
   stopAlerts();
+}
+
+let snoozeTimeoutId = null;
+
+function snoozeCheckin(minutes) {
+  dismissModal();
+  clearInterval(timerIntervalId);
+  clearTimeout(snoozeTimeoutId);
+
+  const snoozeMs = minutes * 60 * 1000;
+  nextCheckinAt = Date.now() + snoozeMs;
+
+  snoozeTimeoutId = setTimeout(() => {
+    startTimer();
+    triggerCheckin();
+  }, snoozeMs);
 }
 
 function handleOverlayClick(e) {
