@@ -907,6 +907,18 @@
         <label>days after last use</label>
       </div>
       <div class="settings-row">
+        <label style="flex:1;font-size:13px">Alerts when tab is hidden</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="alertSoundCheck"> Sound
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="alertTitleFlashCheck"> Title flash
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="alertFaviconCheck"> Favicon badge
+        </label>
+      </div>
+      <div class="settings-row">
         <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save settings</button>
         <button class="btn btn-ghost btn-sm" onclick="triggerCheckin()">Test check-in popup</button>
       </div>
@@ -1049,7 +1061,7 @@ function loadData() {
 
 function getDefaultData() {
   return {
-    settings: { intervalMinutes: 5, retentionDays: 7 },
+    settings: { intervalMinutes: 5, retentionDays: 7, alertSound: true, alertTitleFlash: true, alertFavicon: true },
     tasks: [],
     log: [],
     active: { taskId: null, entryId: null },
@@ -1093,6 +1105,8 @@ function catStyle(name) {
 let timerIntervalId = null;
 let nextCheckinAt = null;
 let countdownId = null;
+let titleFlashId = null;
+const ORIGINAL_TITLE = document.title;
 
 function startTimer() {
   clearInterval(timerIntervalId);
@@ -1216,6 +1230,7 @@ function renderActiveCard() {
 
 function triggerCheckin() {
   showNotification();
+  startAlerts();
   pruneExpiredTasks();
   renderAll();
   openModal();
@@ -1279,6 +1294,7 @@ function openModal() {
 
 function dismissModal() {
   document.getElementById('modalOverlay').classList.remove('visible');
+  stopAlerts();
 }
 
 function handleOverlayClick(e) {
@@ -2117,6 +2133,9 @@ function saveSettings() {
 
   state.settings.intervalMinutes = interval;
   state.settings.retentionDays = retention;
+  state.settings.alertSound = document.getElementById('alertSoundCheck').checked;
+  state.settings.alertTitleFlash = document.getElementById('alertTitleFlashCheck').checked;
+  state.settings.alertFavicon = document.getElementById('alertFaviconCheck').checked;
   saveData();
   startTimer();
   renderTasks();
@@ -2167,6 +2186,7 @@ function importData(event) {
     if (!parsed.active) parsed.active = { taskId: null, entryId: null };
     if (!parsed.categories) parsed.categories = [];
     if (!parsed.settings) parsed.settings = getDefaultData().settings;
+    else { const def = getDefaultData().settings; Object.keys(def).forEach(k => { if (!(k in parsed.settings)) parsed.settings[k] = def[k]; }); }
 
     state = parsed;
     activeCategoryEntryId = null;
@@ -2174,8 +2194,7 @@ function importData(event) {
     activeTimeEditEntryId = null;
     activeTimeEditField = null;
     saveData();
-    document.getElementById('intervalInput').value = state.settings.intervalMinutes;
-    document.getElementById('retentionInput').value = state.settings.retentionDays;
+    syncSettingsUI();
     startTimer();
     renderAll();
     document.getElementById('settingsCard').style.display = 'none';
@@ -2184,7 +2203,7 @@ function importData(event) {
 }
 
 // ============================================================
-// Browser notifications
+// Browser notifications + tab alerts
 // ============================================================
 
 function requestNotificationPermission() {
@@ -2202,6 +2221,69 @@ function showNotification() {
     n.onclick = () => { window.focus(); n.close(); openModal(); };
   }
 }
+
+function playCheckinSound() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    [[880, 0, 0.15], [1047, 0.15, 0.35]].forEach(([freq, start, end]) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.25, ac.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + end);
+      osc.start(ac.currentTime + start);
+      osc.stop(ac.currentTime + end);
+    });
+  } catch (e) { /* audio unavailable */ }
+}
+
+function setFaviconAlert(active) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 32; canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '24px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🐹', 16, 18);
+  if (active) {
+    ctx.fillStyle = '#d4691e';
+    ctx.beginPath();
+    ctx.arc(26, 6, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('!', 26, 6.5);
+  }
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+  link.href = canvas.toDataURL();
+}
+
+function startAlerts() {
+  if (state.settings.alertSound !== false) playCheckinSound();
+  if (state.settings.alertFavicon !== false) setFaviconAlert(true);
+  if (state.settings.alertTitleFlash !== false && !titleFlashId) {
+    let show = true;
+    document.title = '🐹 Check-in time!';
+    titleFlashId = setInterval(() => {
+      document.title = show ? '🐹 Check-in time!' : ORIGINAL_TITLE;
+      show = !show;
+    }, 900);
+  }
+}
+
+function stopAlerts() {
+  if (titleFlashId) { clearInterval(titleFlashId); titleFlashId = null; }
+  document.title = ORIGINAL_TITLE;
+  setFaviconAlert(false);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) stopAlerts();
+});
 
 // ============================================================
 // Keyboard shortcuts
@@ -2435,10 +2517,17 @@ ${hasData ? `
 // Init
 // ============================================================
 
-function init() {
-  document.getElementById('versionDisplay').textContent = VERSION;
+function syncSettingsUI() {
   document.getElementById('intervalInput').value = state.settings.intervalMinutes;
   document.getElementById('retentionInput').value = state.settings.retentionDays;
+  document.getElementById('alertSoundCheck').checked = state.settings.alertSound !== false;
+  document.getElementById('alertTitleFlashCheck').checked = state.settings.alertTitleFlash !== false;
+  document.getElementById('alertFaviconCheck').checked = state.settings.alertFavicon !== false;
+}
+
+function init() {
+  document.getElementById('versionDisplay').textContent = VERSION;
+  syncSettingsUI();
 
   pruneExpiredTasks();
   renderAll();
