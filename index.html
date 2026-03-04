@@ -249,6 +249,30 @@
       border-color: var(--accent);
     }
 
+    .gist-token-input {
+      flex: 1;
+      min-width: 0;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+    .gist-token-input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
+    }
+
+    /* ---- Segmented sort control ---- */
+    .seg-ctrl { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .seg-btn { background: none; border: none; border-right: 1px solid var(--border); padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--text-muted); font-family: inherit; line-height: 1.4; }
+    .seg-btn:last-child { border-right: none; }
+    .seg-btn:hover { background: var(--surface2); color: var(--text); }
+    .seg-btn.seg-active { background: var(--surface2); color: var(--text); font-weight: 600; }
+
     /* ---- Task list ---- */
     .task-list { list-style: none; }
 
@@ -692,6 +716,27 @@
       font-size: 13px;
     }
 
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1a1915;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      box-shadow: var(--shadow-lg);
+      z-index: 2000;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      max-width: 320px;
+    }
+    .toast.toast-error { background: var(--red); }
+    .toast.toast-show { opacity: 1; transform: translateY(0); }
+
     /* ---- Popup modal ---- */
     .modal-overlay {
       position: fixed;
@@ -786,6 +831,31 @@
     .modal-task-btn.is-active:hover {
       background: #d8efdc;
       border-color: var(--green);
+    }
+
+    .modal-start-row {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .modal-start-row select {
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .modal-start-row select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
     }
 
     .modal-new-task {
@@ -964,6 +1034,38 @@
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFile').click()">Restore from file</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
       </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:0 -16px;width:calc(100% + 32px)">
+      <div class="settings-row">
+        <label style="white-space:nowrap">Cloud backup (GitHub Gist)</label>
+        <input type="password" class="gist-token-input" id="gistTokenInput" placeholder="GitHub personal access token" autocomplete="off">
+      </div>
+      <div class="settings-row">
+        <span id="gistStatus" style="flex:1;font-size:12px;color:var(--text-muted)">Not configured</span>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="gistAutoCheck"> Auto-backup
+        </label>
+        <button class="btn btn-outline btn-sm" onclick="backupToGist(false)">Backup now</button>
+        <button class="btn btn-outline btn-sm" onclick="restoreFromGist()">Restore</button>
+      </div>
+      <div style="width:100%;font-size:12px;color:var(--text-muted);padding-top:2px">
+        Create a fine-grained PAT at <strong>github.com/settings/personal-access-tokens</strong> with <em>Gists: read &amp; write</em> scope. The token is stored only in your browser and never included in file backups.
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:0 -16px;width:calc(100% + 32px)">
+      <div class="settings-row">
+        <label style="white-space:nowrap">File system backup</label>
+        <span id="fsStatus" style="flex:1;font-size:12px;color:var(--text-muted)">No file selected</span>
+        <button class="btn btn-outline btn-sm" id="fsReconnectBtn" onclick="reconnectFsBackup()" style="display:none">Reconnect</button>
+        <button class="btn btn-outline btn-sm" id="fsClearBtn" onclick="clearFsBackup()" style="display:none">Clear</button>
+        <button class="btn btn-outline btn-sm" onclick="pickFsBackupFile()">Choose file…</button>
+      </div>
+      <div class="settings-row">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="fsAutoCheck" onchange="toggleFsAutoBackup()"> Auto-save when data changes
+        </label>
+      </div>
+      <div style="width:100%;font-size:12px;color:var(--text-muted);padding-top:2px">
+        Saves to a local JSON file — works with any cloud-synced folder (Dropbox, iCloud Drive, OneDrive, etc).
+      </div>
       <div style="width:100%;text-align:right;font-size:12px;color:var(--text-muted)">v<span id="versionDisplay"></span></div>
     </div>
   </div>
@@ -975,6 +1077,11 @@
         <span id="taskChevron" style="display:inline-block;transition:transform 0.2s;margin-right:5px;font-style:normal;font-size:10px">▼</span>
         Tasks
       </span>
+      <div class="seg-ctrl" onclick="event.stopPropagation()">
+        <button class="seg-btn" id="sortAddedBtn" onclick="setTaskSort('added')">Added</button>
+        <button class="seg-btn" id="sortAlphaBtn" onclick="setTaskSort('alpha')">A–Z</button>
+        <button class="seg-btn" id="sortRecentBtn" onclick="setTaskSort('recent')">Recent</button>
+      </div>
     </div>
     <div id="taskBody">
     <ul class="task-list" id="taskList"></ul>
@@ -1055,6 +1162,10 @@
       <div class="modal-subtitle" id="modalSubtitle">Time for a quick check-in</div>
     </div>
     <div class="modal-tasks" id="modalTasks"></div>
+    <div class="modal-start-row" id="modalStartRow" style="display:none">
+      <label for="modalStartTime">Started at</label>
+      <select id="modalStartTime"></select>
+    </div>
     <div class="modal-new-task">
       <input type="text" id="modalNewTask" placeholder="Or type a new task…" autocomplete="off"
              onkeydown="if(event.key==='Enter') startNewTaskFromModal()">
@@ -1071,6 +1182,8 @@
     </div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <!-- Notification bar -->
 <div class="notif-bar" id="notifBar">
@@ -1099,7 +1212,7 @@ function loadData() {
 
 function getDefaultData() {
   return {
-    settings: { intervalMinutes: 5, retentionDays: 7, alertSound: true, alertTitleFlash: true, alertFavicon: true },
+    settings: { intervalMinutes: 5, retentionDays: 7, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '' },
     tasks: [],
     log: [],
     active: { taskId: null, entryId: null },
@@ -1109,6 +1222,10 @@ function getDefaultData() {
 
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!_gistSaving && !_fsSaving) {
+    scheduleGistBackup();
+    scheduleFsBackup();
+  }
 }
 
 let state = loadData();
@@ -1175,7 +1292,50 @@ function updateCountdown() {
 // Active task tracking
 // ============================================================
 
-function startTask(taskId) {
+function getModalStartISO() {
+  return document.getElementById('modalStartTime').value || new Date().toISOString();
+}
+
+function populateModalStartPicker() {
+  const row = document.getElementById('modalStartRow');
+  const select = document.getElementById('modalStartTime');
+
+  if (!state.active.taskId || !state.active.entryId) {
+    row.style.display = 'none';
+    return;
+  }
+
+  const entry = state.log.find(e => e.id === state.active.entryId);
+  if (!entry) { row.style.display = 'none'; return; }
+
+  row.style.display = '';
+  select.innerHTML = '';
+
+  const STEP_MS = 5 * 60 * 1000;
+  const startMs = new Date(entry.startTime).getTime();
+  const nowMs = Date.now();
+
+  // First 5-min boundary strictly after the entry start
+  const firstMs = Math.ceil((startMs + 1) / STEP_MS) * STEP_MS;
+
+  for (let t = firstMs; t < nowMs - 30_000; t += STEP_MS) {
+    const d = new Date(t);
+    const opt = document.createElement('option');
+    opt.value = d.toISOString();
+    opt.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    select.appendChild(opt);
+  }
+
+  // "Now" is always the last and default-selected option
+  const nowDate = new Date();
+  const nowOpt = document.createElement('option');
+  nowOpt.value = nowDate.toISOString();
+  nowOpt.textContent = 'Now (' + nowDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')';
+  nowOpt.selected = true;
+  select.appendChild(nowOpt);
+}
+
+function startTask(taskId, startISO) {
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
 
@@ -1185,7 +1345,7 @@ function startTask(taskId) {
     return;
   }
 
-  const now = new Date().toISOString();
+  const now = startISO || new Date().toISOString();
 
   // Close current entry if any
   if (state.active.entryId) {
@@ -1303,7 +1463,7 @@ function openModal() {
   if (state.tasks.length === 0) {
     tasksEl.innerHTML = '<p style="padding:16px;color:var(--text-muted);text-align:center;font-size:13px">No tasks yet — type one below</p>';
   } else {
-    state.tasks.forEach(task => {
+    getSortedTasks().forEach(task => {
       const isActive = task.id === state.active.taskId;
       const btn = document.createElement('button');
       btn.className = 'modal-task-btn' + (isActive ? ' is-active' : '');
@@ -1322,7 +1482,7 @@ function openModal() {
         btn.title = 'Currently tracking — click to keep running';
         btn.onclick = () => dismissModal();
       } else {
-        btn.onclick = () => startTask(task.id);
+        btn.onclick = () => startTask(task.id, getModalStartISO());
       }
 
       tasksEl.appendChild(btn);
@@ -1330,6 +1490,7 @@ function openModal() {
   }
 
   document.getElementById('modalNewTask').value = '';
+  populateModalStartPicker();
   overlay.classList.add('visible');
   setTimeout(() => document.getElementById('modalNewTask').focus(), 150);
 }
@@ -1365,7 +1526,7 @@ function startNewTaskFromModal() {
   if (!name) { input.focus(); return; }
 
   const task = createTask(name, false);
-  startTask(task.id);
+  startTask(task.id, getModalStartISO());
 }
 
 // ============================================================
@@ -1436,16 +1597,68 @@ function getDaysUntilExpiry(task) {
   return Math.ceil(remaining / (24 * 60 * 60 * 1000));
 }
 
+function setTaskSort(base) {
+  const raw = state.settings.taskSort || 'added-asc';
+  // migrate legacy values
+  const normalized = raw === 'manual' ? 'added-asc' : raw === 'alpha' ? 'alpha-asc' : raw;
+  const [curBase, curDir = 'asc'] = normalized.split('-');
+  if (curBase === base && base !== 'recent') {
+    state.settings.taskSort = base + '-' + (curDir === 'asc' ? 'desc' : 'asc');
+  } else {
+    state.settings.taskSort = base === 'recent' ? 'recent' : base + '-asc';
+  }
+  saveData();
+  renderTasks();
+}
+
+function getSortedTasks() {
+  let raw = state.settings.taskSort || 'added-asc';
+  // migrate legacy values
+  if (raw === 'manual') raw = 'added-asc';
+  else if (raw === 'alpha') raw = 'alpha-asc';
+  const [base, dir = 'asc'] = raw.split('-');
+  const sorted = [...state.tasks];
+  if (base === 'alpha') {
+    sorted.sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return dir === 'desc' ? -cmp : cmp;
+    });
+  } else if (base === 'recent') {
+    sorted.sort((a, b) => {
+      const ta = a.lastUsed || a.createdAt || '';
+      const tb = b.lastUsed || b.createdAt || '';
+      return tb < ta ? -1 : tb > ta ? 1 : 0;
+    });
+  } else { // 'added'
+    if (dir === 'desc') sorted.reverse();
+  }
+  return sorted;
+}
+
 function renderTasks() {
   const list = document.getElementById('taskList');
   list.innerHTML = '';
+
+  let raw = state.settings.taskSort || 'added-asc';
+  if (raw === 'manual') raw = 'added-asc';
+  else if (raw === 'alpha') raw = 'alpha-asc';
+  const [base, dir = 'asc'] = raw.split('-');
+
+  const labelMap = { added: 'Added', alpha: 'A–Z', recent: 'Recent' };
+  Object.keys(labelMap).forEach(b => {
+    const btn = document.getElementById('sort' + b.charAt(0).toUpperCase() + b.slice(1) + 'Btn');
+    if (!btn) return;
+    const isActive = base === b;
+    btn.classList.toggle('seg-active', isActive);
+    btn.textContent = labelMap[b] + (isActive && b !== 'recent' ? (dir === 'asc' ? ' ↑' : ' ↓') : '');
+  });
 
   if (state.tasks.length === 0) {
     list.innerHTML = '<li class="empty-state"><span style="font-size:24px">📋</span><p>No tasks yet. Add one below.</p></li>';
     return;
   }
 
-  state.tasks.forEach(task => {
+  getSortedTasks().forEach(task => {
     const isActive = task.id === state.active.taskId;
     const daysLeft = getDaysUntilExpiry(task);
     const expiring = daysLeft !== null && daysLeft <= 2;
@@ -2194,6 +2407,8 @@ function saveSettings() {
   state.settings.alertSound = document.getElementById('alertSoundCheck').checked;
   state.settings.alertTitleFlash = document.getElementById('alertTitleFlashCheck').checked;
   state.settings.alertFavicon = document.getElementById('alertFaviconCheck').checked;
+  saveGistToken(document.getElementById('gistTokenInput').value.trim());
+  state.settings.gistAutoBackup = document.getElementById('gistAutoCheck').checked;
   saveData();
   startTimer();
   renderTasks();
@@ -2258,6 +2473,364 @@ function importData(event) {
     document.getElementById('settingsCard').style.display = 'none';
   };
   reader.readAsText(file);
+}
+
+// ============================================================
+// GitHub Gist cloud backup
+// ============================================================
+
+const GIST_TOKEN_KEY = 'hamster_gist_token';
+let _gistSaving = false;
+let _gistBackupTimer = null;
+
+function getGistToken() { return localStorage.getItem(GIST_TOKEN_KEY) || ''; }
+function saveGistToken(token) {
+  if (token) localStorage.setItem(GIST_TOKEN_KEY, token);
+  else localStorage.removeItem(GIST_TOKEN_KEY);
+}
+
+function scheduleGistBackup() {
+  if (!state.settings.gistAutoBackup || !getGistToken()) return;
+  clearTimeout(_gistBackupTimer);
+  _gistBackupTimer = setTimeout(() => backupToGist(true), 10_000);
+}
+
+function updateGistStatus() {
+  const el = document.getElementById('gistStatus');
+  if (!el) return;
+  const token = getGistToken();
+  if (!token) {
+    el.textContent = 'Not configured — enter a token and save settings';
+    el.style.color = 'var(--text-muted)';
+    return;
+  }
+  if (!state.settings.gistId) {
+    el.textContent = 'Ready — click "Backup now" to create your first backup';
+    el.style.color = 'var(--text-muted)';
+    return;
+  }
+  const last = state.settings.gistLastBackup;
+  if (last) {
+    el.textContent = 'Last backed up ' + new Date(last).toLocaleString();
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = 'Gist ID: ' + state.settings.gistId;
+    el.style.color = 'var(--text-muted)';
+  }
+}
+
+function syncGistUI() {
+  document.getElementById('gistTokenInput').value = getGistToken();
+  document.getElementById('gistAutoCheck').checked = state.settings.gistAutoBackup === true;
+  updateGistStatus();
+}
+
+async function backupToGist(silent = false) {
+  const token = getGistToken();
+  if (!token) {
+    if (!silent) showToast('Add a GitHub token in Settings to enable cloud backup.', true);
+    return;
+  }
+
+  const content = JSON.stringify(state, null, 2);
+  const payload = JSON.stringify({
+    description: 'HamsterWheel backup',
+    public: false,
+    files: { 'hamsterwheel-backup.json': { content } }
+  });
+
+  const gistId = state.settings.gistId;
+  const url = gistId
+    ? 'https://api.github.com/gists/' + gistId
+    : 'https://api.github.com/gists';
+  const method = gistId ? 'PATCH' : 'POST';
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: payload
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'HTTP ' + res.status);
+    }
+
+    const data = await res.json();
+    _gistSaving = true;
+    state.settings.gistId = data.id;
+    state.settings.gistLastBackup = new Date().toISOString();
+    saveData();
+    _gistSaving = false;
+    updateGistStatus();
+    showToast(silent ? 'Auto-saved to Gist ✓' : 'Backed up to Gist ✓');
+  } catch (e) {
+    showToast('Gist backup failed: ' + e.message, true);
+  }
+}
+
+async function restoreFromGist() {
+  const token = getGistToken();
+  if (!token) { alert('No GitHub token configured. Add one in Settings and save.'); return; }
+  const gistId = state.settings.gistId;
+  if (!gistId) { alert('No Gist backup found. Use "Backup now" to create one first.'); return; }
+
+  try {
+    const res = await fetch('https://api.github.com/gists/' + gistId, {
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'HTTP ' + res.status);
+    }
+
+    const data = await res.json();
+    const file = data.files['hamsterwheel-backup.json'];
+    if (!file) throw new Error('Backup file not found in Gist.');
+    const rawContent = file.truncated
+      ? await (await fetch(file.raw_url)).text()
+      : file.content;
+
+    let parsed;
+    try { parsed = JSON.parse(rawContent); } catch { throw new Error('Backup JSON is invalid.'); }
+
+    if (!parsed || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.log)) {
+      throw new Error('This Gist does not look like a HamsterWheel backup.');
+    }
+
+    if (!confirm('Restore from Gist?\n\nThis will replace all current data with the Gist backup (' + parsed.log.length + ' log entries, ' + parsed.tasks.length + ' tasks).\n\nYour current data will be overwritten.')) return;
+
+    // Preserve current gist connection
+    const savedGistId = state.settings.gistId;
+    const savedAutoBackup = state.settings.gistAutoBackup;
+    const savedLastBackup = state.settings.gistLastBackup;
+
+    if (!parsed.active) parsed.active = { taskId: null, entryId: null };
+    if (!parsed.categories) parsed.categories = [];
+    if (!parsed.settings) parsed.settings = getDefaultData().settings;
+    else { const def = getDefaultData().settings; Object.keys(def).forEach(k => { if (!(k in parsed.settings)) parsed.settings[k] = def[k]; }); }
+
+    parsed.settings.gistId = parsed.settings.gistId || savedGistId;
+    parsed.settings.gistAutoBackup = parsed.settings.gistAutoBackup ?? savedAutoBackup;
+    parsed.settings.gistLastBackup = parsed.settings.gistLastBackup || savedLastBackup;
+
+    state = parsed;
+    activeCategoryEntryId = null;
+    activeNameEditEntryId = null;
+    activeTimeEditEntryId = null;
+    activeTimeEditField = null;
+    saveData();
+    syncSettingsUI();
+    startTimer();
+    renderAll();
+    document.getElementById('settingsCard').style.display = 'none';
+    alert('Restored from Gist backup!');
+  } catch (e) {
+    alert('Restore failed: ' + e.message);
+  }
+}
+
+// ============================================================
+// Toast notifications
+// ============================================================
+
+function showToast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'toast' + (isError ? ' toast-error' : '') + ' toast-show';
+  clearTimeout(el._toastTimer);
+  el._toastTimer = setTimeout(() => el.classList.remove('toast-show'), 3500);
+}
+
+// ============================================================
+// File system backup
+// ============================================================
+
+let _fsHandle = null;
+let _fsPendingHandle = null;
+let _fsSaving = false;
+let _fsBackupTimer = null;
+
+async function _openFsDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('hamsterwheel', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('fsh');
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _storeFsHandle(handle) {
+  const db = await _openFsDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fsh', 'readwrite');
+    tx.objectStore('fsh').put(handle, 'backup');
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function _retrieveFsHandle() {
+  const db = await _openFsDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fsh', 'readonly');
+    const req = tx.objectStore('fsh').get('backup');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _deleteFsHandle() {
+  const db = await _openFsDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fsh', 'readwrite');
+    tx.objectStore('fsh').delete('backup');
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function initFsBackup() {
+  try {
+    const handle = await _retrieveFsHandle();
+    if (!handle) return;
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      _fsHandle = handle;
+    } else {
+      _fsPendingHandle = handle;
+    }
+    syncFsUI();
+  } catch { /* IDB unavailable or permission check failed — silently skip */ }
+}
+
+async function pickFsBackupFile() {
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'hamsterwheel-backup.json',
+      types: [{ description: 'JSON backup', accept: { 'application/json': ['.json'] } }]
+    });
+    _fsHandle = handle;
+    _fsPendingHandle = null;
+    await _storeFsHandle(handle);
+    state.settings.fsFileName = handle.name;
+    state.settings.fsAutoBackup = true;
+    state.settings.fsLastBackup = '';
+    saveData();
+    syncFsUI();
+    await writeToFsHandle();
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    if (e instanceof TypeError) showToast('File system access is not supported or is blocked in this browser.', true);
+    else showToast('Could not open file: ' + e.message, true);
+  }
+}
+
+async function reconnectFsBackup() {
+  if (!_fsPendingHandle) return;
+  try {
+    const perm = await _fsPendingHandle.requestPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      _fsHandle = _fsPendingHandle;
+      _fsPendingHandle = null;
+      syncFsUI();
+      showToast('Reconnected — auto-save active');
+    } else {
+      showToast('Permission denied', true);
+    }
+  } catch (e) {
+    showToast('Reconnect failed: ' + e.message, true);
+  }
+}
+
+async function clearFsBackup() {
+  _fsHandle = null;
+  _fsPendingHandle = null;
+  clearTimeout(_fsBackupTimer);
+  await _deleteFsHandle().catch(() => {});
+  state.settings.fsAutoBackup = false;
+  state.settings.fsFileName = '';
+  state.settings.fsLastBackup = '';
+  saveData();
+  syncFsUI();
+}
+
+async function writeToFsHandle() {
+  if (!_fsHandle) return;
+  try {
+    const writable = await _fsHandle.createWritable();
+    await writable.write(JSON.stringify(state, null, 2));
+    await writable.close();
+    _fsSaving = true;
+    state.settings.fsLastBackup = new Date().toISOString();
+    saveData();
+    _fsSaving = false;
+    updateFsStatus();
+    showToast('Auto-saved to ' + _fsHandle.name + ' ✓');
+  } catch (e) {
+    showToast('File backup failed: ' + e.message, true);
+  }
+}
+
+function scheduleFsBackup() {
+  if (!state.settings.fsAutoBackup || !_fsHandle) return;
+  clearTimeout(_fsBackupTimer);
+  _fsBackupTimer = setTimeout(() => writeToFsHandle(), 10_000);
+}
+
+function toggleFsAutoBackup() {
+  state.settings.fsAutoBackup = document.getElementById('fsAutoCheck').checked;
+  saveData();
+}
+
+function updateFsStatus() {
+  const el = document.getElementById('fsStatus');
+  const reconnectBtn = document.getElementById('fsReconnectBtn');
+  const clearBtn = document.getElementById('fsClearBtn');
+  if (!el) return;
+
+  if (_fsPendingHandle) {
+    el.textContent = (state.settings.fsFileName || _fsPendingHandle.name) + ' — permission needed';
+    el.style.color = 'var(--accent)';
+    reconnectBtn.style.display = '';
+    clearBtn.style.display = '';
+    return;
+  }
+  if (_fsHandle) {
+    const last = state.settings.fsLastBackup;
+    el.textContent = last ? 'Last saved ' + new Date(last).toLocaleString() : _fsHandle.name + ' — ready';
+    el.style.color = 'var(--green)';
+    reconnectBtn.style.display = 'none';
+    clearBtn.style.display = '';
+    return;
+  }
+  if (state.settings.fsFileName) {
+    el.textContent = state.settings.fsFileName + ' — not connected';
+    el.style.color = 'var(--text-muted)';
+    reconnectBtn.style.display = 'none';
+    clearBtn.style.display = '';
+    return;
+  }
+  el.textContent = 'No file selected';
+  el.style.color = 'var(--text-muted)';
+  reconnectBtn.style.display = 'none';
+  clearBtn.style.display = 'none';
+}
+
+function syncFsUI() {
+  document.getElementById('fsAutoCheck').checked = state.settings.fsAutoBackup === true;
+  updateFsStatus();
 }
 
 // ============================================================
@@ -2581,11 +3154,14 @@ function syncSettingsUI() {
   document.getElementById('alertSoundCheck').checked = state.settings.alertSound !== false;
   document.getElementById('alertTitleFlashCheck').checked = state.settings.alertTitleFlash !== false;
   document.getElementById('alertFaviconCheck').checked = state.settings.alertFavicon !== false;
+  syncGistUI();
+  syncFsUI();
 }
 
 function init() {
   document.getElementById('versionDisplay').textContent = VERSION;
   syncSettingsUI();
+  initFsBackup();
 
   pruneExpiredTasks();
   renderAll();
