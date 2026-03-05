@@ -94,6 +94,15 @@ Every tracked session creates a log entry. The 100 most recent entries are shown
 
 > Editing a time only changes the hour and minute — the date stays the same.
 
+### Backdating a running task
+
+For the currently active entry, quick-backdate buttons appear next to the start time: **−5m**, **−15m**, **−30m**, **−1h**. Each snaps the start time to the previous wall-clock boundary for that interval — for example, clicking **−15m** at 10:23 sets the start to 10:15.
+
+- Clicking a button also moves the **end time of the preceding entry** to the same point, keeping the timeline seamless.
+- Buttons that would move the start to before (or equal to) the preceding entry's own start time are hidden automatically.
+- Buttons that would resolve to the same boundary as a shorter interval are also hidden to avoid duplicates.
+- For precise control, click the start time itself to open the full time picker.
+
 ### Category picker
 
 - Type a new category name, or click one of the recent-use chips.

@@ -567,6 +567,30 @@
       width: 88px;
     }
 
+    .log-start-cell {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .backdate-btn {
+      font-size: 10px;
+      padding: 1px 4px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.4;
+    }
+    .backdate-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--surface2);
+    }
+
     .log-del-btn {
       opacity: 0;
       background: transparent;
@@ -675,6 +699,50 @@
       background: var(--accent-light);
       color: var(--accent);
       border-color: var(--accent);
+    }
+
+    .log-overlap-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 16px;
+      background: #fdecea;
+      border-bottom: 1px solid var(--red);
+      font-size: 11px;
+      color: var(--red);
+    }
+
+    .log-overlap-label {
+      flex: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .btn-fix-overlap {
+      opacity: 0;
+      font-size: 11px;
+      padding: 2px 7px;
+      background: var(--surface);
+      border: 1px solid #e9a09a;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--red);
+      font-family: inherit;
+      transition: opacity 0.1s, background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+
+    .log-overlap-row:hover .btn-fix-overlap {
+      opacity: 1;
+    }
+
+    .btn-fix-overlap:hover {
+      background: #fdecea;
+      color: #922b21;
+      border-color: var(--red);
+    }
+
+    .log-item.has-overlap {
+      border-left: 3px solid var(--red);
     }
 
     /* ---- Week report ---- */
@@ -1113,7 +1181,6 @@
       </div>
     </div>
     <div id="taskBody">
-    <ul class="task-list" id="taskList"></ul>
     <form class="add-task-form" onsubmit="addTask(event)">
       <div class="form-group">
         <label for="newTaskInput">New task</label>
@@ -1126,6 +1193,7 @@
       </label>
       <button type="submit" class="btn btn-primary" style="align-self:flex-end">Add task</button>
     </form>
+    <ul class="task-list" id="taskList"></ul>
     </div>
   </div>
 
@@ -1593,11 +1661,11 @@ function addTask(e) {
   const name = document.getElementById('newTaskInput').value.trim();
   if (!name) return;
 
-  createTask(name, document.getElementById('newTaskRecurring').checked);
+  const task = createTask(name, document.getElementById('newTaskRecurring').checked);
 
   document.getElementById('newTaskInput').value = '';
   document.getElementById('newTaskRecurring').checked = false;
-  renderTasks();
+  startTask(task.id);
 }
 
 function deleteTask(id) {
@@ -1891,6 +1959,23 @@ function buildTimeInput(entry, field, currentIso) {
   return inp;
 }
 
+function backdateEntry(entryId, newStartIso) {
+  const entryIdx = state.log.findIndex(e => e.id === entryId);
+  if (entryIdx === -1) return;
+  const entry = state.log[entryIdx];
+  entry.startTime = newStartIso;
+  // Adapt the end time of the preceding (older) entry to keep the timeline continuous
+  const prevEntry = state.log[entryIdx + 1];
+  if (prevEntry && prevEntry.endTime) {
+    prevEntry.endTime = newStartIso;
+  }
+  activeTimeEditEntryId = null;
+  activeTimeEditField = null;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
 function deleteLogEntry(id) {
   if (state.active.entryId === id) state.active = { taskId: null, entryId: null };
   state.log = state.log.filter(e => e.id !== id);
@@ -1977,6 +2062,24 @@ function closeGapPullStart(entryId, newStartIso) {
   renderWeekReport();
 }
 
+function trimOverlapEnd(entryId, newEndIso) {
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  entry.endTime = newEndIso;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
+function trimOverlapStart(entryId, newStartIso) {
+  const entry = state.log.find(e => e.id === entryId);
+  if (!entry) return;
+  entry.startTime = newStartIso;
+  saveData();
+  renderLog();
+  renderWeekReport();
+}
+
 function formatTime(isoStr) {
   const date = new Date(isoStr);
   const isToday = date.toDateString() === new Date().toDateString();
@@ -2008,6 +2111,21 @@ function renderLog() {
   }
 
   const visibleEntries = state.log.slice(0, 100);
+
+  // Pre-compute which entries have time overlaps with their adjacent neighbour
+  const overlapIds = new Set();
+  for (let i = 0; i < visibleEntries.length - 1; i++) {
+    const a = visibleEntries[i];
+    const b = visibleEntries[i + 1];
+    if (a.id === state.active.entryId || b.id === state.active.entryId) continue;
+    const aStart = new Date(a.startTime || a.timestamp).getTime();
+    const bEnd = b.endTime ? new Date(b.endTime).getTime() : NaN;
+    if (!isNaN(aStart) && !isNaN(bEnd) && bEnd > aStart) {
+      overlapIds.add(a.id);
+      overlapIds.add(b.id);
+    }
+  }
+
   visibleEntries.forEach((entry, i) => {
     const isActive = entry.id === state.active.entryId;
     const isPickerOpen = entry.id === activeCategoryEntryId;
@@ -2016,7 +2134,7 @@ function renderLog() {
     const startIso = entry.startTime || entry.timestamp;
 
     const li = document.createElement('li');
-    li.className = 'log-item' + (isActive ? ' is-active' : '');
+    li.className = 'log-item' + (isActive ? ' is-active' : '') + (overlapIds.has(entry.id) ? ' has-overlap' : '');
     li.dataset.entryId = entry.id;
 
     // Col 1: task column (filled below)
@@ -2025,16 +2143,48 @@ function renderLog() {
     li.appendChild(taskCol);
 
     // Col 2: start time
+    const startCell = document.createElement('span');
+    startCell.className = 'log-start-cell';
     if (isEditingStart) {
-      li.appendChild(buildTimeInput(entry, 'start', startIso));
+      startCell.appendChild(buildTimeInput(entry, 'start', startIso));
     } else {
       const span = document.createElement('span');
       span.className = 'log-time log-time-edit';
       span.textContent = formatTime(startIso);
       span.title = 'Click to edit start time';
       span.addEventListener('click', () => openTimeEditor(entry.id, 'start'));
-      li.appendChild(span);
+      startCell.appendChild(span);
     }
+    if (isActive) {
+      const now = new Date();
+      const nowTotalMins = now.getHours() * 60 + now.getMinutes();
+      const currentStart = new Date(startIso);
+      // Find the preceding log entry to enforce minimum start time
+      const entryIdx = state.log.findIndex(e => e.id === entry.id);
+      const prevEntry = state.log[entryIdx + 1];
+      const prevStartTime = prevEntry ? new Date(prevEntry.startTime || prevEntry.timestamp) : null;
+      const seenIsos = new Set();
+      [[5,'−5m'],[15,'−15m'],[30,'−30m'],[60,'−1h']].forEach(([intervalMins, label]) => {
+        const snappedMins = Math.floor(nowTotalMins / intervalMins) * intervalMins;
+        const target = new Date(now);
+        target.setHours(Math.floor(snappedMins / 60), snappedMins % 60, 0, 0);
+        // Must be strictly before current start (actual backdate)
+        if (target >= currentStart) return;
+        // Must be strictly after previous task's start time
+        if (prevStartTime && target <= prevStartTime) return;
+        // De-duplicate: skip if another smaller interval resolves to the same boundary
+        const iso = target.toISOString();
+        if (seenIsos.has(iso)) return;
+        seenIsos.add(iso);
+        const btn = document.createElement('button');
+        btn.className = 'backdate-btn';
+        btn.textContent = label;
+        btn.title = `Set start to ${formatTime(iso)}`;
+        btn.addEventListener('click', e => { e.stopPropagation(); backdateEntry(entry.id, iso); });
+        startCell.appendChild(btn);
+      });
+    }
+    li.appendChild(startCell);
 
     // Col 3: arrow
     const arrow = document.createElement('span');
@@ -2172,45 +2322,77 @@ function renderLog() {
 
     list.appendChild(li);
 
-    // Gap indicator between this entry and the next (older) entry
+    // Gap / overlap indicator between this entry and the next (older) entry
     const nextEntry = visibleEntries[i + 1];
-    if (nextEntry && !isActive) {
+    if (nextEntry && !isActive && nextEntry.id !== state.active.entryId) {
       const thisStartMs = new Date(entry.startTime || entry.timestamp).getTime();
       const nextEndMs = nextEntry.endTime ? new Date(nextEntry.endTime).getTime() : NaN;
-      if (!isNaN(thisStartMs) && !isNaN(nextEndMs) && thisStartMs - nextEndMs > 60000) {
-        const gapMs = thisStartMs - nextEndMs;
-        const gapLi = document.createElement('li');
-        gapLi.className = 'log-gap-row';
 
-        const label = document.createElement('span');
-        label.className = 'log-gap-label';
-        label.textContent = `↕ ${formatDuration(gapMs)} gap`;
-        gapLi.appendChild(label);
+      if (!isNaN(thisStartMs) && !isNaN(nextEndMs)) {
+        const diff = thisStartMs - nextEndMs; // positive = gap, negative = overlap
 
-        const extendBtn = document.createElement('button');
-        extendBtn.className = 'btn-close-gap';
-        extendBtn.textContent = 'Extend end ↑';
-        extendBtn.title = 'Extend the end of the entry below to close this gap';
-        extendBtn.addEventListener('click', () => closeGapExtendEnd(nextEntry.id, entry.startTime || entry.timestamp));
-        gapLi.appendChild(extendBtn);
+        if (diff > 60000) {
+          // Gap indicator
+          const gapLi = document.createElement('li');
+          gapLi.className = 'log-gap-row';
 
-        const pullBtn = document.createElement('button');
-        pullBtn.className = 'btn-close-gap';
-        pullBtn.textContent = '↓ Pull start';
-        pullBtn.title = 'Pull the start of the entry above back to close this gap';
-        pullBtn.addEventListener('click', () => closeGapPullStart(entry.id, nextEntry.endTime));
-        gapLi.appendChild(pullBtn);
+          const label = document.createElement('span');
+          label.className = 'log-gap-label';
+          label.textContent = `↕ ${formatDuration(diff)} gap`;
+          gapLi.appendChild(label);
 
-        const fillBtn = document.createElement('button');
-        fillBtn.className = 'btn-close-gap';
-        fillBtn.textContent = '+ Fill gap';
-        fillBtn.title = 'Add a new entry to fill this gap';
-        const gapStartIso = nextEntry.endTime;
-        const gapEndIso = entry.startTime || entry.timestamp;
-        fillBtn.addEventListener('click', () => toggleAddEntryPanel(gapStartIso, gapEndIso));
-        gapLi.appendChild(fillBtn);
+          const extendBtn = document.createElement('button');
+          extendBtn.className = 'btn-close-gap';
+          extendBtn.textContent = 'Extend end ↑';
+          extendBtn.title = 'Extend the end of the entry below to close this gap';
+          extendBtn.addEventListener('click', () => closeGapExtendEnd(nextEntry.id, entry.startTime || entry.timestamp));
+          gapLi.appendChild(extendBtn);
 
-        list.appendChild(gapLi);
+          const pullBtn = document.createElement('button');
+          pullBtn.className = 'btn-close-gap';
+          pullBtn.textContent = '↓ Pull start';
+          pullBtn.title = 'Pull the start of the entry above back to close this gap';
+          pullBtn.addEventListener('click', () => closeGapPullStart(entry.id, nextEntry.endTime));
+          gapLi.appendChild(pullBtn);
+
+          const fillBtn = document.createElement('button');
+          fillBtn.className = 'btn-close-gap';
+          fillBtn.textContent = '+ Fill gap';
+          fillBtn.title = 'Add a new entry to fill this gap';
+          const gapStartIso = nextEntry.endTime;
+          const gapEndIso = entry.startTime || entry.timestamp;
+          fillBtn.addEventListener('click', () => toggleAddEntryPanel(gapStartIso, gapEndIso));
+          gapLi.appendChild(fillBtn);
+
+          list.appendChild(gapLi);
+
+        } else if (diff < 0) {
+          // Overlap indicator
+          const overlapMs = -diff;
+          const overlapLi = document.createElement('li');
+          overlapLi.className = 'log-overlap-row';
+
+          const label = document.createElement('span');
+          label.className = 'log-overlap-label';
+          label.textContent = `\u26a0 ${formatDuration(overlapMs)} overlap`;
+          overlapLi.appendChild(label);
+
+          const trimEndBtn = document.createElement('button');
+          trimEndBtn.className = 'btn-fix-overlap';
+          trimEndBtn.textContent = 'Trim end \u2191';
+          trimEndBtn.title = 'Trim the end of the entry below to remove the overlap';
+          trimEndBtn.addEventListener('click', () => trimOverlapEnd(nextEntry.id, entry.startTime || entry.timestamp));
+          overlapLi.appendChild(trimEndBtn);
+
+          const trimStartBtn = document.createElement('button');
+          trimStartBtn.className = 'btn-fix-overlap';
+          trimStartBtn.textContent = '\u2191 Trim start';
+          trimStartBtn.title = 'Trim the start of the entry above to remove the overlap';
+          trimStartBtn.addEventListener('click', () => trimOverlapStart(entry.id, nextEntry.endTime));
+          overlapLi.appendChild(trimStartBtn);
+
+          list.appendChild(overlapLi);
+        }
       }
     }
   });
