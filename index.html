@@ -141,6 +141,25 @@
       50% { opacity: 0.5; transform: scale(0.8); }
     }
 
+    .btn-local-backup {
+      opacity: 0.35;
+      transition: opacity 0.15s;
+      color: var(--text-muted);
+      border-color: transparent;
+      background: transparent;
+    }
+    .btn-local-backup:hover { opacity: 1; background: transparent; border-color: var(--border); }
+    .btn-local-backup.backup-overdue {
+      opacity: 1;
+      color: #b45309;
+      border-color: transparent;
+      animation: backup-nudge 2.5s ease-in-out infinite;
+    }
+    @keyframes backup-nudge {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
     .active-task-name {
       flex: 1;
       font-size: 15px;
@@ -983,6 +1002,11 @@
   <div class="card" id="activeCard" style="display:none">
     <div class="card-header">
       <span class="card-title">Now tracking</span>
+      <button id="localBackupBtn" class="btn btn-sm btn-local-backup" onclick="localBackupFromCard()" title="Download local backup">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M2 10v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2M7 1v7M4.5 5.5 7 8l2.5-2.5"/>
+        </svg>
+      </button>
       <button class="btn btn-stop btn-sm" onclick="stopCurrentTask()">Stop</button>
     </div>
     <div class="active-body">
@@ -1007,6 +1031,11 @@
         <label for="retentionInput">Keep non-recurring tasks for</label>
         <input type="number" id="retentionInput" min="1" max="365" value="7">
         <label>days after last use</label>
+      </div>
+      <div class="settings-row">
+        <label for="logRetentionInput">Keep log history for</label>
+        <input type="number" id="logRetentionInput" min="1" max="52" value="2">
+        <label>weeks</label>
       </div>
       <div class="settings-row">
         <label style="flex:1;font-size:13px">Alerts when tab is hidden</label>
@@ -1138,7 +1167,11 @@
   <!-- Week report -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">This week</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="shiftWeek(-1)" title="Previous week" style="padding:2px 6px">&#8249;</button>
+        <span id="weekTitle" class="card-title" style="min-width:80px;text-align:center">This week</span>
+        <button class="btn btn-ghost btn-sm" id="weekNextBtn" onclick="shiftWeek(1)" title="Next week" style="padding:2px 6px;visibility:hidden">&#8250;</button>
+      </div>
       <div style="display:flex;align-items:center;gap:8px">
         <span id="weekRangeLabel" style="font-size:12px;color:var(--text-muted)"></span>
         <button class="btn btn-ghost btn-sm" onclick="generateWeekPDF()" title="Export weekly report as PDF">
@@ -1212,7 +1245,7 @@ function loadData() {
 
 function getDefaultData() {
   return {
-    settings: { intervalMinutes: 5, retentionDays: 7, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '' },
+    settings: { intervalMinutes: 5, retentionDays: 7, logRetentionWeeks: 2, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '', lastLocalBackup: '' },
     tasks: [],
     log: [],
     active: { taskId: null, entryId: null },
@@ -1230,6 +1263,7 @@ function saveData() {
 
 let state = loadData();
 
+let weekOffset = 0; // 0 = current week, -1 = last week, etc.
 let activeCategoryEntryId = null;
 let activeNameEditEntryId = null;
 let activeTimeEditEntryId = null;
@@ -1424,6 +1458,13 @@ function renderActiveCard() {
 
   const ms = Date.now() - new Date(entry.startTime).getTime();
   document.getElementById('activeDuration').textContent = formatDuration(ms);
+
+  // Flash backup button if no local backup in the last 24h
+  const btn = document.getElementById('localBackupBtn');
+  if (btn) {
+    const last = state.settings.lastLocalBackup ? new Date(state.settings.lastLocalBackup).getTime() : 0;
+    btn.classList.toggle('backup-overdue', Date.now() - last > 24 * 60 * 60 * 1000);
+  }
 }
 
 // ============================================================
@@ -1434,6 +1475,7 @@ function triggerCheckin() {
   showNotification();
   startAlerts();
   pruneExpiredTasks();
+  pruneLog();
   renderAll();
   openModal();
 }
@@ -1587,6 +1629,18 @@ function pruneExpiredTasks() {
     return (now - ref) < retentionMs;
   });
   saveData();
+}
+
+function pruneLog() {
+  const weeks = state.settings.logRetentionWeeks ?? 2;
+  const cutoff = Date.now() - weeks * 7 * 24 * 60 * 60 * 1000;
+  const before = state.log.length;
+  state.log = state.log.filter(entry => {
+    if (entry.id === state.active.entryId) return true; // never prune the active entry
+    const t = new Date(entry.startTime || entry.timestamp).getTime();
+    return isNaN(t) || t >= cutoff;
+  });
+  if (state.log.length !== before) saveData();
 }
 
 function getDaysUntilExpiry(task) {
@@ -2190,17 +2244,23 @@ function clearLog() {
 // Week report
 // ============================================================
 
-function getWeekDays() {
+function getWeekDays(offset) {
+  if (offset === undefined) offset = weekOffset;
   const now = new Date();
   const dow = now.getDay(); // 0=Sun
   const monday = new Date(now);
-  monday.setDate(now.getDate() - ((dow + 6) % 7));
+  monday.setDate(now.getDate() - ((dow + 6) % 7) + offset * 7);
   monday.setHours(0, 0, 0, 0);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
   });
+}
+
+function shiftWeek(delta) {
+  weekOffset = Math.min(0, weekOffset + delta);
+  renderWeekReport();
 }
 
 function buildWeekData(days) {
@@ -2238,7 +2298,11 @@ function renderWeekReport() {
   const days = getWeekDays();
   const map = buildWeekData(days);
 
-  // Week range label
+  // Week title + range label + next-button visibility
+  const titleEl = document.getElementById('weekTitle');
+  if (titleEl) titleEl.textContent = weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : `${Math.abs(weekOffset)} weeks ago`;
+  const nextBtn = document.getElementById('weekNextBtn');
+  if (nextBtn) nextBtn.style.visibility = weekOffset < 0 ? 'visible' : 'hidden';
   const rangeEl = document.getElementById('weekRangeLabel');
   if (rangeEl) {
     const fmt = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -2246,7 +2310,7 @@ function renderWeekReport() {
   }
 
   if (map.size === 0) {
-    container.innerHTML = '<p class="week-empty-state">No tracked time this week yet.</p>';
+    container.innerHTML = `<p class="week-empty-state">No tracked time ${weekOffset === 0 ? 'this week' : 'that week'} yet.</p>`;
     return;
   }
 
@@ -2398,12 +2462,15 @@ function toggleSettings() {
 function saveSettings() {
   const interval = parseInt(document.getElementById('intervalInput').value);
   const retention = parseInt(document.getElementById('retentionInput').value);
+  const logRetention = parseInt(document.getElementById('logRetentionInput').value);
 
   if (isNaN(interval) || interval < 1) { alert('Interval must be at least 1 minute'); return; }
   if (isNaN(retention) || retention < 1) { alert('Retention must be at least 1 day'); return; }
+  if (isNaN(logRetention) || logRetention < 1) { alert('Log retention must be at least 1 week'); return; }
 
   state.settings.intervalMinutes = interval;
   state.settings.retentionDays = retention;
+  state.settings.logRetentionWeeks = logRetention;
   state.settings.alertSound = document.getElementById('alertSoundCheck').checked;
   state.settings.alertTitleFlash = document.getElementById('alertTitleFlashCheck').checked;
   state.settings.alertFavicon = document.getElementById('alertFaviconCheck').checked;
@@ -2429,6 +2496,14 @@ function exportData() {
   a.download = `hamsterwheel-backup-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function localBackupFromCard() {
+  exportData();
+  state.settings.lastLocalBackup = new Date().toISOString();
+  saveData();
+  const btn = document.getElementById('localBackupBtn');
+  if (btn) btn.classList.remove('backup-overdue');
 }
 
 function importData(event) {
@@ -3151,6 +3226,7 @@ ${hasData ? `
 function syncSettingsUI() {
   document.getElementById('intervalInput').value = state.settings.intervalMinutes;
   document.getElementById('retentionInput').value = state.settings.retentionDays;
+  document.getElementById('logRetentionInput').value = state.settings.logRetentionWeeks ?? 2;
   document.getElementById('alertSoundCheck').checked = state.settings.alertSound !== false;
   document.getElementById('alertTitleFlashCheck').checked = state.settings.alertTitleFlash !== false;
   document.getElementById('alertFaviconCheck').checked = state.settings.alertFavicon !== false;
@@ -3164,6 +3240,7 @@ function init() {
   initFsBackup();
 
   pruneExpiredTasks();
+  pruneLog();
   renderAll();
   startTimer();
   requestNotificationPermission();

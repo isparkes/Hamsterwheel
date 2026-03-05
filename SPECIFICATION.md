@@ -13,28 +13,42 @@ All state is stored as a single JSON object in `localStorage` under the key `ham
 ```
 {
   settings: {
-    intervalMinutes: number,   // check-in popup frequency
-    retentionDays:   number    // one-off task lifetime
+    intervalMinutes:   number,   // check-in popup frequency (default 5)
+    retentionDays:     number,   // one-off task lifetime (default 7)
+    logRetentionWeeks: number,   // log history window in weeks (default 2)
+    alertSound:        boolean,
+    alertTitleFlash:   boolean,
+    alertFavicon:      boolean,
+    taskSort:          string,   // 'added-asc'|'added-desc'|'alpha-asc'|'alpha-desc'|'recent'
+    lastLocalBackup:   string,   // ISO 8601 timestamp of last local JSON download
+    gistId:            string,
+    gistAutoBackup:    boolean,
+    gistLastBackup:    string,   // ISO 8601
+    fsAutoBackup:      boolean,
+    fsFileName:        string,
+    fsLastBackup:      string    // ISO 8601
   },
-  tasks: Task[],
-  log:   Entry[],
+  tasks:      Task[],
+  log:        Entry[],
   active: {
-    taskId:  string | null,    // ID of currently tracked task
-    entryId: string | null     // ID of the open log entry
+    taskId:  string | null,      // ID of currently tracked task
+    entryId: string | null       // ID of the open log entry
   },
-  categories: string[]         // known category names, most-recently-used first (max 20)
+  categories: string[]           // known category names, most-recently-used first (max 20)
 }
 ```
+
+The GitHub Personal Access Token is stored separately under the localStorage key `hamster_gist_token` and is never serialised into the state object.
 
 ### Task
 
 ```
 {
-  id:        string   // UUID
+  id:        string          // UUID
   name:      string
   recurring: boolean
-  createdAt: string   // ISO 8601
-  lastUsed:  string | null  // ISO 8601
+  createdAt: string          // ISO 8601
+  lastUsed:  string | null   // ISO 8601
 }
 ```
 
@@ -42,11 +56,11 @@ All state is stored as a single JSON object in `localStorage` under the key `ham
 
 ```
 {
-  id:        string         // UUID
+  id:        string          // UUID
   taskId:    string
-  taskName:  string         // snapshot of task name at time of creation
-  startTime: string         // ISO 8601
-  endTime:   string | null  // null while the entry is active
+  taskName:  string          // snapshot of task name at time of creation
+  startTime: string          // ISO 8601
+  endTime:   string | null   // null while the entry is active
   category:  string | null
 }
 ```
@@ -62,21 +76,33 @@ All state is stored as a single JSON object in `localStorage` under the key `ham
 - A countdown runs continuously in the page header showing time until the next check-in.
 - When the interval elapses, a modal popup opens and the countdown resets.
 - The interval is configurable in settings (1–480 minutes, default 5).
-- A "Test check-in popup" button in settings triggers the popup immediately.
+- A **Test check-in popup** button in settings triggers the popup immediately.
 - If the browser tab is hidden when the interval fires, a Web Notifications API alert is sent (requires permission). Clicking it focuses the tab and opens the modal.
+- `snoozeCheckin(minutes)` delays the next check-in by the given number of minutes (15, 30, or 60). It sets `nextCheckinAt = Date.now() + snoozeMs`, clears the existing `snoozeTimeoutId`, schedules a new one, and dismisses the modal.
 
 ### 2. Tasks
 
 #### Adding tasks
 - Tasks are added via the form at the bottom of the Tasks card.
 - Each task has a name and a recurring toggle.
-- The card is collapsible: clicking the card header toggles the list and add-task form open or closed. The card is open by default.
+- The card is collapsible: clicking the card header toggles the list and add-task form open or closed.
 
 #### Recurring vs one-off
 - **Recurring** tasks are never automatically removed.
 - **One-off** tasks are pruned when they have not been used within `retentionDays` days, measured from `lastUsed` (or `createdAt` if never used).
 - The currently active task is never pruned regardless of its retention status.
 - Each one-off task displays a badge showing how many days remain; turns red at ≤ 2 days.
+
+#### Task sort
+The segmented control in the Tasks card header controls sort order. `setTaskSort(base)` toggles direction (`asc`/`desc`) if the base is already active, otherwise sets the base with `asc`. The value is stored in `state.settings.taskSort` as one of:
+
+| Value | Meaning |
+|---|---|
+| `added-asc` / `added-desc` | Creation order |
+| `alpha-asc` / `alpha-desc` | Alphabetical by name |
+| `recent` | Most recently used first (no direction toggle) |
+
+Legacy values `'manual'` and `'alpha'` are migrated to `'added-asc'` and `'alpha-asc'` on read. `getSortedTasks()` is a shared helper used by both `renderTasks()` and `openModal()`.
 
 #### Task actions
 - **▶ / ■** button — starts tracking the task (or stops it if it is the active task).
@@ -89,30 +115,37 @@ All state is stored as a single JSON object in `localStorage` under the key `ham
 - Exactly one task can be tracked at a time.
 - Starting a task:
   1. If a different task is already active, its log entry is closed (`endTime = now`).
-  2. A new log entry is created with `startTime = now`, `endTime = null`.
+  2. A new log entry is created with `startTime = now` (or a caller-supplied ISO string), `endTime = null`.
   3. `state.active` is updated to point to the new task and entry.
-- Starting the currently active task again dismisses the modal/interaction without creating a new entry.
+- Starting the currently active task again dismisses the modal without creating a new entry.
 - Stopping (`stopCurrentTask`): sets `endTime = now` on the active entry, clears `state.active`.
 - On page reload, the active task and its open entry are restored from `localStorage`. The entry resumes from its saved `startTime`, so elapsed time continues to accumulate.
 
 #### "Now tracking" card
 - Shown only when a task is active; hidden otherwise.
-- Displays: task name, pulsing green dot, live elapsed duration (updates every second).
-- Contains a **Stop** button.
+- Displays: pulsing green dot, task name, live elapsed duration (updates every second).
+- Contains a **Stop** button and a **local backup button** (see §10).
+
+#### Start-time picker in modal
+- When a task is already active and the check-in modal opens, a `"Started at"` dropdown is populated with 5-minute interval timestamps from just after the current entry's `startTime` up to now (options at least 30 s before now), plus a final "Now" option (selected by default).
+- Selecting an earlier time and then switching tasks sets the new entry's `startTime` to the chosen value and also sets the closing `endTime` of the previous entry to the same value, back-dating the switch.
+- The picker is hidden when no task is active.
 
 ### 4. Check-in Modal
 
-- Lists all current tasks as buttons.
+- Lists all current tasks as buttons (sorted by `getSortedTasks()`).
 - The currently active task is highlighted green with a ▶ prefix.
 - Clicking the active task dismisses the modal; tracking continues uninterrupted.
-- Clicking any other task switches tracking to that task.
+- Clicking any other task switches tracking to that task (using the selected start time from the picker).
 - A text input at the bottom allows creating a new task and immediately starting it.
 - The modal subtitle shows the current time (no active task) or the active task name and elapsed duration (task running).
+- **Snooze buttons** — 15m / 30m / 1h — dismiss the modal and delay the next check-in.
+- **Continue** — dismisses the modal without changing anything.
 - The modal is dismissed by clicking outside, pressing Escape, or selecting/creating a task.
 
 ### 5. Time Log
 
-Displayed as a scrollable list (newest first, capped at 100 entries). The card is collapsible: clicking the card header toggles the list open or closed; a chevron (▼/◀) indicates the current state.
+Displayed as a scrollable list (newest first, capped at 100 rendered entries). The card is collapsible.
 
 | Column | Content |
 |---|---|
@@ -129,80 +162,118 @@ Duration format: `30s` / `4m 22s` / `1h 05m`.
 
 #### Renaming log entries
 - Clicking a task name in the log opens an inline text input pre-filled with the current name.
-- Pressing Enter or tabbing away (with a non-empty value) saves the new name to `entry.taskName`.
-- Pressing Escape or clearing the input and blurring cancels without saving.
-- Opening the name editor closes any open category picker, and vice versa.
-- The active entry's name in the "Now tracking" card is not updated retroactively — it still shows the name from when tracking started.
+- Pressing Enter or tabbing away (with a non-empty value) saves to `entry.taskName`.
+- Pressing Escape cancels without saving.
 
-### 6. Categories
+#### Editing times
+- Start and end time spans carry class `log-time-edit` (dotted underline on hover).
+- Clicking opens a `<input type="time">` in place of the span.
+- Saving validates that start < end; alerts and reverts on violation.
+- Escape cancels.
+- State variables: `activeTimeEditEntryId`, `activeTimeEditField` (`'start'` or `'end'`).
+
+#### Gap indicators
+When two consecutive log entries have a gap of more than 1 minute, a dashed separator row appears between them showing the gap duration. Three buttons appear on hover:
+
+| Button | Action |
+|---|---|
+| **Extend end ↑** | `closeGapExtendEnd(entryId, newEndIso)` — sets older entry's `endTime` to newer entry's `startTime` |
+| **↓ Pull start** | `closeGapPullStart(entryId, newStartIso)` — sets newer entry's `startTime` to older entry's `endTime` |
+| **+ Fill gap** | Calls `toggleAddEntryPanel(startIso, endIso)` — opens the add-entry panel pre-filled with the gap bounds |
+
+### 6. Adding Manual Entries
+
+`toggleAddEntryPanel(startIso?, endIso?)` opens a form accepting optional ISO strings to pre-fill start and end times. On submit:
+- If the task name matches an existing task (case-insensitive) it is linked; otherwise a new task is created.
+- If no end time is provided and the entry falls between two existing entries, `endTime` is auto-set to the next entry's `startTime`.
+
+### 7. Categories
 
 - Any log entry can be tagged with a free-text category.
 - Clicking `+ tag` (or an existing category badge) opens an **inline picker** that expands within the log row.
-- The picker contains:
-  - A text input (pre-filled with the current category if set).
-  - Up to 10 chips for recently used categories.
-  - A **✕ clear** chip when a category is currently set.
-- Saving: press Enter, click a chip, or click/tab away (if the input has a value).
-- Cancelling: press Escape, or click away with an empty input.
-- `mousedown` is used on chips (instead of `click`) so the chip action completes before the input's `blur` event fires.
+- The picker contains a text input, up to 10 recent-category chips, and a **✕ clear** chip when a category is set.
+- Saving: Enter, click a chip, or click/tab away with a value.
+- Cancelling: Escape, or click away with an empty input.
+- `mousedown` is used on chips to fire before the input's `blur` event.
 - All category text is set via `textContent` / DOM methods — no HTML injection path.
-- Categories are stored in `state.categories` ordered by most recent use (max 20 entries). Duplicate names are deduplicated on save.
-- Colors are assigned deterministically per category name by hashing the name to an index into an 8-color palette. The same name always gets the same color.
+- `state.categories` — most-recently-used first, max 20, deduplicated on save.
+- Colors: `CAT_PALETTE` (8 colors) assigned by consistent hash of category name. The same name always gets the same color everywhere.
 
-### 7. Weekly Report
+### 8. Weekly Report
 
 - Located below the time log.
-- Shows the current Monday–Sunday week (ISO week, local timezone).
-- Dimensions: categories (rows) × days (columns) + Total row + Total column.
+- Shows a Monday–Sunday week (ISO week, local timezone).
+- Dimensions: categories (rows) × days (columns) + Total column + Total footer row.
 - Row order: named categories alphabetically, "Uncategorized" last.
-- Today's column is highlighted.
-- Duration format in cells: `< 1m` / `45m` / `1h 30m` (rounded to nearest minute, no seconds).
-- The active entry's contribution is included using `Date.now()` as the effective end time.
-- The table is horizontally scrollable on narrow viewports (`min-width: 460px`).
-- Re-renders on every `renderAll()` call (task start/stop, categorisation, log clear, check-in).
-- A **PDF** button in the card header triggers `generateWeekPDF()`.
+- Today's column is highlighted (hidden for past weeks).
+- Duration format in cells: `< 1m` / `45m` / `1h 30m` (nearest minute, no seconds).
+- The active entry's contribution uses `Date.now()` as the effective end time.
+- Horizontally scrollable on narrow viewports.
+- Re-renders on every `renderAll()` call.
 
-### 8. PDF Report
+#### Week navigation
+`weekOffset` (module-level variable, default `0`) controls which week is displayed. `shiftWeek(delta)` clamps the offset to ≤ 0 (future weeks are not accessible). `getWeekDays(offset?)` uses `weekOffset` when no argument is supplied. The header title reads "This week", "Last week", or "N weeks ago". The **›** button is hidden when `weekOffset === 0`.
 
-Invoked via the **PDF** button in the weekly report card header.
+### 9. PDF Report
 
-- Opens a new browser tab containing a self-contained, print-ready HTML page.
-- Automatically triggers `window.print()` after a short delay (400 ms) to allow the page to render.
-- If the browser blocks the popup, an alert instructs the user to allow pop-ups.
-- The report contains two sections:
+`generateWeekPDF()` opens a new browser tab with a self-contained print-ready HTML page for whichever week is currently displayed (`weekOffset`). It auto-triggers `window.print()` after 400 ms. If the popup is blocked, an alert is shown.
+
+Two sections:
 
 #### Weekly Summary by Task
-A table with one row per unique task name and one column per day of the current week, plus a **Total** column and a **Total** footer row. Values are formatted with `formatDurShort` (same as the on-screen week table). Empty cells show `—`.
+One row per unique task name; one column per day; Total column; Total footer row. Empty cells show `—`.
 
 #### Daily Breakdown
-One subsection per day that has at least one log entry. Each subsection contains:
-- Day heading (full weekday name + date).
-- A table of all log entries for that day, sorted ascending by start time: task name, category, start time (HH:MM), end time (HH:MM or `…` if still running), duration.
-- A "Day total" footer row.
+One subsection per day with entries, sorted ascending by start time: task name, category, start (HH:MM), end (HH:MM or `…`), duration. A "Day total" footer row. Each subsection has `page-break-inside: avoid`.
 
-Each day subsection carries `page-break-inside: avoid` so entries are not split across pages when printing.
+All user text is set via `textContent` / `esc()` — no HTML injection path.
 
-- All user-generated text is set via `textContent` / `esc()` — no HTML injection path.
-- The report is generated entirely client-side from `state`; no data leaves the machine.
-
-### 9. Settings
+### 10. Settings
 
 | Setting | Range | Default |
 |---|---|---|
 | Check-in interval | 1–480 min | 5 min |
 | Task retention | 1–365 days | 7 days |
+| Log retention | 1–52 weeks | 2 weeks |
 
 Saving settings restarts the countdown timer from zero.
 
-### 9. Backup & Restore
+### 11. Pruning
 
-- **Download backup** — serialises `state` to indented JSON and triggers a browser file download named `hamsterwheel-backup-YYYY-MM-DD.json`. No data is modified.
-- **Restore from file** — opens a file picker (`.json` only). On selection:
-  1. Parses the file; alerts on JSON parse error.
-  2. Validates that `tasks` and `log` are arrays; alerts if not.
-  3. Shows a confirmation dialog summarising entry and task counts.
-  4. On confirmation, replaces `state` entirely, fills in any missing fields for backward compatibility, saves to `localStorage`, and re-renders everything.
-  - The file input value is cleared after each use so the same file can be re-selected.
+#### Task pruning — `pruneExpiredTasks()`
+Filters `state.tasks`, removing one-off tasks where `Date.now() - ref >= retentionMs`. The active task is always kept. Called at startup and on every check-in.
+
+#### Log pruning — `pruneLog()`
+Filters `state.log`, removing entries whose `startTime` (or `timestamp`) is older than `logRetentionWeeks * 7` days. The active entry is always kept. Calls `saveData()` only if entries were removed. Called at startup and on every check-in.
+
+### 12. Local Backup Button
+
+A small download icon button in the "Now tracking" card header. Normal state: dim/transparent. Overdue state (last local backup > 24 h ago): slow amber pulse animation.
+
+- Clicking calls `localBackupFromCard()`: runs `exportData()`, sets `state.settings.lastLocalBackup = now`, calls `saveData()`, and removes the overdue class.
+- `renderActiveCard()` evaluates overdue status on every call (driven by the 1-second tick).
+
+### 13. Backup & Restore
+
+#### Local JSON export/import
+- `exportData()` — serialises `state` to indented JSON and triggers a browser download named `hamsterwheel-backup-YYYY-MM-DD.json`. Does not modify state or record `lastLocalBackup` (that is done by `localBackupFromCard()`).
+- `importData(event)` — parses the file, validates `tasks` and `log` arrays, confirms with the user, replaces state, fills missing fields for backward compatibility, saves, and re-renders.
+
+#### Cloud backup — GitHub Gist
+- Token stored under `hamster_gist_token` (separate from state; never exported).
+- `backupToGist(silent)` — creates (POST) or updates (PATCH) a secret Gist. `_gistSaving` flag prevents re-entrant calls.
+- `restoreFromGist()` — fetches and restores with confirmation.
+- `scheduleGistBackup()` — debounces 10 s after each `saveData()` call when auto-backup is on.
+
+#### File system backup — File System Access API (Chromium only)
+- `FileSystemFileHandle` stored in IndexedDB (`hamsterwheel` DB, `fsh` store, key `'backup'`).
+- `initFsBackup()` — restores handle on load; if permission is `'granted'` sets `_fsHandle`; otherwise sets `_fsPendingHandle` (shows Reconnect button).
+- `writeToFsHandle()` — writes JSON to the file and toasts the result.
+- `_fsSaving` flag prevents re-entrant calls.
+- `scheduleFsBackup()` — debounces 10 s after each `saveData()` call when auto-save is on.
+
+#### Toast notifications
+`showToast(msg, isError)` — fixed bottom-right `#toast` element; 3.5 s auto-dismiss; `.toast-error` class for failures. Used for all backup results.
 
 ---
 
@@ -211,8 +282,8 @@ Saving settings restarts the countdown timer from zero.
 - **Single file** — all HTML, CSS, and JavaScript in `index.html`.
 - **No build step** — open directly via `file://` in any modern browser.
 - **No external dependencies** — no frameworks, no CDN resources.
-- **Storage** — `localStorage` only; nothing is sent over the network.
-- **Timers** — one `setInterval` for the check-in countdown (fires every 1 second); one `setInterval` for the check-in popup (fires every `intervalMinutes` minutes).
+- **Storage** — `localStorage` (state) + `IndexedDB` (filesystem handle) + `localStorage` (Gist token).
+- **Timers** — one `setInterval` firing every second for the countdown and live-duration updates; a separate `setInterval` firing every `intervalMinutes` minutes for check-ins.
 - **Rendering** — imperative DOM manipulation; no virtual DOM. `renderAll()` is the top-level render call. `updateActiveDuration()` performs targeted live updates without a full re-render.
 
 ---
@@ -221,20 +292,38 @@ Saving settings restarts the countdown timer from zero.
 
 | Function | Purpose |
 |---|---|
-| `startTask(taskId)` | Begin tracking a task; close any open entry first |
+| `startTask(taskId, startISO?)` | Begin tracking a task; close any open entry first |
 | `stopCurrentTask()` | Close the active entry without starting another |
-| `triggerCheckin()` | Fire notification + prune tasks + open modal |
+| `triggerCheckin()` | Fire notification + prune + open modal |
+| `snoozeCheckin(minutes)` | Delay the next check-in and dismiss the modal |
+| `populateModalStartPicker()` | Fill the "Started at" dropdown in the check-in modal |
+| `getModalStartISO()` | Return the selected start time from the modal picker |
 | `openCategoryPicker(entryId)` | Show inline category editor for a log entry |
 | `setCategory(entryId, cat)` | Persist a category and update the known-categories list |
 | `openNameEditor(entryId)` | Show inline name input for a log entry |
 | `setEntryName(entryId, name)` | Persist a renamed log entry task name |
+| `openTimeEditor(entryId, field)` | Show inline time input for start or end |
+| `saveTimeEdit(entryId, field, value)` | Validate and persist an edited time |
+| `getSortedTasks()` | Return tasks sorted per `state.settings.taskSort` |
+| `setTaskSort(base)` | Update task sort, toggling direction if already active |
+| `getWeekDays(offset?)` | Return 7 Date objects for the target Mon–Sun week |
+| `shiftWeek(delta)` | Adjust `weekOffset` and re-render the weekly report |
 | `buildWeekData(days)` | Aggregate log entries into a category × day ms matrix |
+| `renderWeekReport()` | Render the weekly report table and update nav controls |
 | `generateWeekPDF()` | Open a print-ready report tab and trigger `window.print()` |
 | `exportData()` | Download current state as a JSON file |
+| `localBackupFromCard()` | Download backup + record `lastLocalBackup` + update button |
 | `importData(event)` | Validate and restore state from an uploaded JSON file |
-| `renderAll()` | Re-render active card, task list, log, and week report |
-| `updateActiveDuration()` | Targeted live update of the active entry's duration display |
+| `backupToGist(silent)` | Create or update the GitHub Gist backup |
+| `restoreFromGist()` | Fetch and restore state from the Gist |
+| `scheduleGistBackup()` | Debounced auto-backup trigger |
+| `writeToFsHandle()` | Write state JSON to the filesystem file handle |
+| `scheduleFsBackup()` | Debounced auto-save trigger |
 | `pruneExpiredTasks()` | Remove one-off tasks past their retention window |
+| `pruneLog()` | Remove log entries older than `logRetentionWeeks` weeks |
+| `renderAll()` | Re-render active card, task list, log, and week report |
+| `updateActiveDuration()` | Targeted live update of active entry duration display |
+| `showToast(msg, isError)` | Display a temporary notification in the bottom-right corner |
+| `saveData()` | Write `state` to `localStorage`; trigger debounced auto-backups |
 | `toggleLog(event)` | Collapse or expand the time log card |
 | `toggleTasks(event)` | Collapse or expand the tasks card |
-| `saveData()` | Write `state` to `localStorage` |
