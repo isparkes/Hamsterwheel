@@ -16,7 +16,7 @@ HamsterWheel is a lightweight time tracker that lives entirely in a single brows
 ## Tasks
 
 ### Adding a task
-Use the form at the bottom of the Tasks card. Type a name, optionally toggle **Recurring**, then click **Add task** (or press Enter).
+Use the form at the bottom of the Tasks card. Type a name, optionally toggle **Recurring**, then click **Add task** (or press Enter). As you type, the task list above filters in real time to show only matching tasks.
 
 ### Recurring vs one-off
 
@@ -62,7 +62,7 @@ When a task is active, a green card appears at the top of the page showing:
 
 A check-in fires automatically at the configured interval (default every 5 minutes). It opens a modal asking what you're working on.
 
-- **Pick an existing task** to switch to it (the currently active task is highlighted green).
+- **Pick an existing task** to switch to it (the currently active task is highlighted green). As you type in the bottom field, the task list filters in real time to show only matching tasks.
 - **Type in the bottom field** and press **Add & start** to create a new task on the fly.
 - **Continue** dismisses the modal without changing anything.
 
@@ -165,6 +165,15 @@ From the print dialog choose **Save as PDF** to download the file.
 
 ---
 
+## Header controls
+
+The header bar contains:
+- **Countdown badge** — time until the next check-in.
+- **⏥ Pause button** — toggles pause mode. When paused: the current task is ended, the countdown stops (badge shows "Paused"), and no check-in popups appear. Clicking again resumes the timer and immediately opens the "What are you working on?" modal. The button turns orange when active.
+- **⚙ Settings button** — opens the settings panel.
+
+---
+
 ## Settings
 
 Click the **⚙** icon in the header.
@@ -183,7 +192,7 @@ Saving settings restarts the countdown timer from zero. A **Test check-in popup*
 
 ### Local backup button
 
-The "Now tracking" card has a small **download icon** button in its header. Click it to download a JSON backup immediately. If no local backup has been taken in the last 24 hours, the button pulses amber as a reminder.
+The "Now tracking" card has a small **download icon** button in its header. Click it to download a JSON backup immediately. The file is named `hamsterwheel-backup-YYYY-MM-DD_HH-MM.json`. If no local backup has been taken in the last 24 hours, the button pulses amber as a reminder.
 
 ### Settings panel
 

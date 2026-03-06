@@ -80,12 +80,22 @@ The GitHub Personal Access Token is stored separately under the localStorage key
 - If the browser tab is hidden when the interval fires, a Web Notifications API alert is sent (requires permission). Clicking it focuses the tab and opens the modal.
 - `snoozeCheckin(minutes)` delays the next check-in by the given number of minutes (15, 30, or 60). It sets `nextCheckinAt = Date.now() + snoozeMs`, clears the existing `snoozeTimeoutId`, schedules a new one, and dismisses the modal.
 
-### 2. Tasks
+### 2. Pause
+
+A **⏥ Pause** toggle button sits in the header next to the settings icon. State is held in the module-level boolean `isPaused`.
+
+- **Activating pause** (`isPaused = true`): calls `stopCurrentTask()`, clears `timerIntervalId` and `snoozeTimeoutId`, sets `nextCheckinAt = null`, displays "Paused" in the countdown badge, and adds `.is-paused` (orange) to the button.
+- **Deactivating pause** (`isPaused = false`): calls `startTimer()` to resume the countdown, then immediately calls `openModal()`.
+- `triggerCheckin()` returns early without opening the modal when `isPaused` is `true`.
+- `updateCountdown()` skips its update when `isPaused` is `true`.
+
+### 3. Tasks
 
 #### Adding tasks
 - Tasks are added via the form at the bottom of the Tasks card.
 - Each task has a name and a recurring toggle.
 - The card is collapsible: clicking the card header toggles the list and add-task form open or closed.
+- Typing in the new-task input filters the task list in real time (`filterTaskList()`); items whose name does not contain the query are hidden. The filter is cleared after a task is added.
 
 #### Recurring vs one-off
 - **Recurring** tasks are never automatically removed.
@@ -110,7 +120,7 @@ Legacy values `'manual'` and `'alpha'` are migrated to `'added-asc'` and `'alpha
 - **Trash** button — deletes the task; if it is the active task, tracking is stopped first.
 - Clicking the task name also starts tracking.
 
-### 3. Active Task Tracking
+### 4. Active Task Tracking
 
 - Exactly one task can be tracked at a time.
 - Starting a task:
@@ -131,7 +141,7 @@ Legacy values `'manual'` and `'alpha'` are migrated to `'added-asc'` and `'alpha
 - Selecting an earlier time and then switching tasks sets the new entry's `startTime` to the chosen value and also sets the closing `endTime` of the previous entry to the same value, back-dating the switch.
 - The picker is hidden when no task is active.
 
-### 4. Check-in Modal
+### 5. Check-in Modal
 
 - Lists all current tasks as buttons (sorted by `getSortedTasks()`).
 - The currently active task is highlighted green with a ▶ prefix.
@@ -142,8 +152,9 @@ Legacy values `'manual'` and `'alpha'` are migrated to `'added-asc'` and `'alpha
 - **Snooze buttons** — 15m / 30m / 1h — dismiss the modal and delay the next check-in.
 - **Continue** — dismisses the modal without changing anything.
 - The modal is dismissed by clicking outside, pressing Escape, or selecting/creating a task.
+- Typing in the new-task input filters the task button list in real time (`filterModalTasks()`); buttons whose name does not contain the query string are hidden.
 
-### 5. Time Log
+### 6. Time Log
 
 Displayed as a scrollable list (newest first, capped at 100 rendered entries). The card is collapsible.
 
@@ -181,13 +192,13 @@ When two consecutive log entries have a gap of more than 1 minute, a dashed sepa
 | **↓ Pull start** | `closeGapPullStart(entryId, newStartIso)` — sets newer entry's `startTime` to older entry's `endTime` |
 | **+ Fill gap** | Calls `toggleAddEntryPanel(startIso, endIso)` — opens the add-entry panel pre-filled with the gap bounds |
 
-### 6. Adding Manual Entries
+### 7. Adding Manual Entries
 
 `toggleAddEntryPanel(startIso?, endIso?)` opens a form accepting optional ISO strings to pre-fill start and end times. On submit:
 - If the task name matches an existing task (case-insensitive) it is linked; otherwise a new task is created.
 - If no end time is provided and the entry falls between two existing entries, `endTime` is auto-set to the next entry's `startTime`.
 
-### 7. Categories
+### 8. Categories
 
 - Any log entry can be tagged with a free-text category.
 - Clicking `+ tag` (or an existing category badge) opens an **inline picker** that expands within the log row.
@@ -199,7 +210,7 @@ When two consecutive log entries have a gap of more than 1 minute, a dashed sepa
 - `state.categories` — most-recently-used first, max 20, deduplicated on save.
 - Colors: `CAT_PALETTE` (8 colors) assigned by consistent hash of category name. The same name always gets the same color everywhere.
 
-### 8. Weekly Report
+### 9. Weekly Report
 
 - Located below the time log.
 - Shows a Monday–Sunday week (ISO week, local timezone).
@@ -214,7 +225,7 @@ When two consecutive log entries have a gap of more than 1 minute, a dashed sepa
 #### Week navigation
 `weekOffset` (module-level variable, default `0`) controls which week is displayed. `shiftWeek(delta)` clamps the offset to ≤ 0 (future weeks are not accessible). `getWeekDays(offset?)` uses `weekOffset` when no argument is supplied. The header title reads "This week", "Last week", or "N weeks ago". The **›** button is hidden when `weekOffset === 0`.
 
-### 9. PDF Report
+### 10. PDF Report
 
 `generateWeekPDF()` opens a new browser tab with a self-contained print-ready HTML page for whichever week is currently displayed (`weekOffset`). It auto-triggers `window.print()` after 400 ms. If the popup is blocked, an alert is shown.
 
@@ -228,7 +239,7 @@ One subsection per day with entries, sorted ascending by start time: task name, 
 
 All user text is set via `textContent` / `esc()` — no HTML injection path.
 
-### 10. Settings
+### 11. Settings
 
 | Setting | Range | Default |
 |---|---|---|
@@ -238,7 +249,7 @@ All user text is set via `textContent` / `esc()` — no HTML injection path.
 
 Saving settings restarts the countdown timer from zero.
 
-### 11. Pruning
+### 12. Pruning
 
 #### Task pruning — `pruneExpiredTasks()`
 Filters `state.tasks`, removing one-off tasks where `Date.now() - ref >= retentionMs`. The active task is always kept. Called at startup and on every check-in.
@@ -246,17 +257,17 @@ Filters `state.tasks`, removing one-off tasks where `Date.now() - ref >= retenti
 #### Log pruning — `pruneLog()`
 Filters `state.log`, removing entries whose `startTime` (or `timestamp`) is older than `logRetentionWeeks * 7` days. The active entry is always kept. Calls `saveData()` only if entries were removed. Called at startup and on every check-in.
 
-### 12. Local Backup Button
+### 13. Local Backup Button
 
 A small download icon button in the "Now tracking" card header. Normal state: dim/transparent. Overdue state (last local backup > 24 h ago): slow amber pulse animation.
 
 - Clicking calls `localBackupFromCard()`: runs `exportData()`, sets `state.settings.lastLocalBackup = now`, calls `saveData()`, and removes the overdue class.
 - `renderActiveCard()` evaluates overdue status on every call (driven by the 1-second tick).
 
-### 13. Backup & Restore
+### 14. Backup & Restore
 
 #### Local JSON export/import
-- `exportData()` — serialises `state` to indented JSON and triggers a browser download named `hamsterwheel-backup-YYYY-MM-DD.json`. Does not modify state or record `lastLocalBackup` (that is done by `localBackupFromCard()`).
+- `exportData()` — serialises `state` to indented JSON and triggers a browser download named `hamsterwheel-backup-YYYY-MM-DD_HH-MM.json` (timestamp at time of export). Does not modify state or record `lastLocalBackup` (that is done by `localBackupFromCard()`).
 - `importData(event)` — parses the file, validates `tasks` and `log` arrays, confirms with the user, replaces state, fills missing fields for backward compatibility, saves, and re-renders.
 
 #### Cloud backup — GitHub Gist
@@ -294,6 +305,9 @@ A small download icon button in the "Now tracking" card header. Normal state: di
 |---|---|
 | `startTask(taskId, startISO?)` | Begin tracking a task; close any open entry first |
 | `stopCurrentTask()` | Close the active entry without starting another |
+| `togglePause()` | Toggle pause mode; stops task + timer when activating, restarts + opens modal when deactivating |
+| `filterTaskList()` | Show/hide task card items based on new-task input text |
+| `filterModalTasks()` | Show/hide modal task buttons based on new-task input text |
 | `triggerCheckin()` | Fire notification + prune + open modal |
 | `snoozeCheckin(minutes)` | Delay the next check-in and dismiss the modal |
 | `populateModalStartPicker()` | Fill the "Started at" dropdown in the check-in modal |

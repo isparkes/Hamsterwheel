@@ -61,6 +61,7 @@
     .logo-icon { font-size: 20px; }
 
     .header-actions { display: flex; align-items: center; gap: 8px; }
+    #pauseBtn.is-paused { color: var(--accent); }
 
     .timer-badge {
       font-size: 12px;
@@ -293,7 +294,7 @@
     .seg-btn.seg-active { background: var(--surface2); color: var(--text); font-weight: 600; }
 
     /* ---- Task list ---- */
-    .task-list { list-style: none; }
+    .task-list { list-style: none; max-height: 400px; overflow-y: auto; }
 
     .task-item {
       display: flex;
@@ -1056,6 +1057,12 @@
   </div>
   <div class="header-actions">
     <span class="timer-badge" id="timerDisplay">Next check-in: --:--</span>
+    <button class="btn btn-ghost btn-icon" id="pauseBtn" onclick="togglePause()" title="Pause check-ins" aria-label="Pause">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="3" y="2" width="3.5" height="12" rx="1"/>
+        <rect x="9.5" y="2" width="3.5" height="12" rx="1"/>
+      </svg>
+    </button>
     <button class="btn btn-ghost btn-icon" onclick="toggleSettings()" title="Settings" aria-label="Settings">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="8" cy="8" r="2.5"/>
@@ -1184,7 +1191,7 @@
     <form class="add-task-form" onsubmit="addTask(event)">
       <div class="form-group">
         <label for="newTaskInput">New task</label>
-        <input type="text" id="newTaskInput" placeholder="What will you work on?" autocomplete="off">
+        <input type="text" id="newTaskInput" placeholder="What will you work on?" autocomplete="off" oninput="filterTaskList()">
       </div>
       <label class="toggle-label">
         <input type="checkbox" id="newTaskRecurring">
@@ -1269,6 +1276,7 @@
     </div>
     <div class="modal-new-task">
       <input type="text" id="modalNewTask" placeholder="Or type a new task…" autocomplete="off"
+             oninput="filterModalTasks()"
              onkeydown="if(event.key==='Enter') startNewTaskFromModal()">
       <button class="btn btn-primary" onclick="startNewTaskFromModal()">Add & start</button>
     </div>
@@ -1361,6 +1369,7 @@ function catStyle(name) {
 
 let timerIntervalId = null;
 let nextCheckinAt = null;
+let isPaused = false;
 let countdownId = null;
 let titleFlashId = null;
 const ORIGINAL_TITLE = document.title;
@@ -1382,7 +1391,7 @@ function startTimer() {
 }
 
 function updateCountdown() {
-  if (!nextCheckinAt) return;
+  if (isPaused || !nextCheckinAt) return;
   const diff = Math.max(0, Math.round((nextCheckinAt - Date.now()) / 1000));
   const m = Math.floor(diff / 60).toString().padStart(2, '0');
   const s = (diff % 60).toString().padStart(2, '0');
@@ -1494,6 +1503,11 @@ function startTask(taskId, startISO) {
   dismissModal();
 }
 
+function pauseAndDismiss() {
+  stopCurrentTask();
+  dismissModal();
+}
+
 function stopCurrentTask() {
   if (!state.active.entryId) return;
 
@@ -1554,12 +1568,31 @@ function renderActiveCard() {
 // ============================================================
 
 function triggerCheckin() {
+  if (isPaused) return;
   showNotification();
   startAlerts();
   pruneExpiredTasks();
   pruneLog();
   renderAll();
   openModal();
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  const btn = document.getElementById('pauseBtn');
+  btn.classList.toggle('is-paused', isPaused);
+  btn.title = isPaused ? 'Resume check-ins' : 'Pause check-ins';
+  if (isPaused) {
+    stopCurrentTask();
+    clearInterval(timerIntervalId);
+    clearTimeout(snoozeTimeoutId);
+    timerIntervalId = null;
+    nextCheckinAt = null;
+    document.getElementById('timerDisplay').textContent = 'Paused';
+  } else {
+    startTimer();
+    openModal();
+  }
 }
 
 function openModal() {
@@ -1644,6 +1677,14 @@ function handleOverlayClick(e) {
   if (e.target === document.getElementById('modalOverlay')) dismissModal();
 }
 
+function filterModalTasks() {
+  const q = document.getElementById('modalNewTask').value.trim().toLowerCase();
+  document.querySelectorAll('#modalTasks .modal-task-btn').forEach(btn => {
+    const name = btn.querySelector('span')?.textContent.replace(/^▶ /, '').toLowerCase() ?? '';
+    btn.style.display = (!q || name.includes(q)) ? '' : 'none';
+  });
+}
+
 function startNewTaskFromModal() {
   const input = document.getElementById('modalNewTask');
   const name = input.value.trim();
@@ -1679,6 +1720,7 @@ function addTask(e) {
 
   document.getElementById('newTaskInput').value = '';
   document.getElementById('newTaskRecurring').checked = false;
+  filterTaskList();
   startTask(task.id);
 }
 
@@ -1769,6 +1811,14 @@ function getSortedTasks() {
     if (dir === 'desc') sorted.reverse();
   }
   return sorted;
+}
+
+function filterTaskList() {
+  const q = document.getElementById('newTaskInput').value.trim().toLowerCase();
+  document.querySelectorAll('#taskList .task-item').forEach(li => {
+    const name = li.querySelector('.task-name');
+    li.style.display = (!q || (name && name.textContent.toLowerCase().includes(q))) ? '' : 'none';
+  });
 }
 
 function renderTasks() {
@@ -1928,12 +1978,18 @@ function saveTimeEdit(entryId, field, value) {
   if (!value) { closeTimeEditor(); return; }
   const entry = state.log.find(e => e.id === entryId);
   if (!entry) return;
-  // Preserve the original date, apply the new HH:MM
-  const originalIso = field === 'start' ? (entry.startTime || entry.timestamp) : entry.endTime;
-  const base = new Date(originalIso || new Date());
-  const [h, m] = value.split(':').map(Number);
-  base.setHours(h, m, 0, 0);
-  const newIso = base.toISOString();
+  let newIso;
+  if (value.includes('T')) {
+    // datetime-local value (cross-boundary entry)
+    newIso = new Date(value).toISOString();
+  } else {
+    // time-only value — preserve original date
+    const originalIso = field === 'start' ? (entry.startTime || entry.timestamp) : entry.endTime;
+    const base = new Date(originalIso || new Date());
+    const [h, m] = value.split(':').map(Number);
+    base.setHours(h, m, 0, 0);
+    newIso = base.toISOString();
+  }
   if (field === 'start') {
     if (entry.endTime && new Date(newIso) >= new Date(entry.endTime)) {
       alert('Start time must be before end time'); return;
@@ -1955,11 +2011,16 @@ function saveTimeEdit(entryId, field, value) {
 
 function buildTimeInput(entry, field, currentIso) {
   const inp = document.createElement('input');
-  inp.type = 'time';
+  const startIso = entry.startTime || entry.timestamp;
+  const crossesBoundary = entry.endTime && startIso &&
+    new Date(startIso).toDateString() !== new Date(entry.endTime).toDateString();
+  inp.type = crossesBoundary ? 'datetime-local' : 'time';
   inp.className = 'log-time-input';
   const d = new Date(currentIso);
   const pad = n => n.toString().padStart(2, '0');
-  inp.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  inp.value = crossesBoundary
+    ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   inp.addEventListener('change', () => { if (inp.value) saveTimeEdit(entry.id, field, inp.value); });
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); if (inp.value) saveTimeEdit(entry.id, field, inp.value); }
@@ -2683,7 +2744,9 @@ function saveSettings() {
 // ============================================================
 
 function exportData() {
-  const date = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
   const json = JSON.stringify(state, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
