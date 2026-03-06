@@ -1589,7 +1589,9 @@ function togglePause() {
     timerIntervalId = null;
     nextCheckinAt = null;
     document.getElementById('timerDisplay').textContent = 'Paused';
+    setFaviconAlert(false, true);
   } else {
+    setFaviconAlert(false, false);
     startTimer();
     openModal();
   }
@@ -3205,7 +3207,7 @@ function playCheckinSound() {
   } catch (e) { /* audio unavailable */ }
 }
 
-function setFaviconAlert(active) {
+function setFaviconAlert(active, paused) {
   const canvas = document.createElement('canvas');
   canvas.width = 32; canvas.height = 32;
   const ctx = canvas.getContext('2d');
@@ -3213,7 +3215,15 @@ function setFaviconAlert(active) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('🐹', 16, 18);
-  if (active) {
+  if (paused) {
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(26, 6, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(22, 3, 2.5, 6);
+    ctx.fillRect(25.5, 3, 2.5, 6);
+  } else if (active) {
     ctx.fillStyle = '#d4691e';
     ctx.beginPath();
     ctx.arc(26, 6, 7, 0, Math.PI * 2);
@@ -3243,7 +3253,7 @@ function startAlerts() {
 function stopAlerts() {
   if (titleFlashId) { clearInterval(titleFlashId); titleFlashId = null; }
   document.title = ORIGINAL_TITLE;
-  setFaviconAlert(false);
+  setFaviconAlert(false, isPaused);
 }
 
 document.addEventListener('visibilitychange', () => {
