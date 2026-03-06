@@ -1457,6 +1457,20 @@ function startTask(taskId, startISO) {
     }
   }
 
+  // Check if the most recent entry for this task ended within the last 5 minutes
+  const lastEntry = state.log.find(e => e.taskId === taskId);
+  const RESUME_THRESHOLD_MS = 5 * 60 * 1000;
+  if (lastEntry && lastEntry.endTime && (new Date(now) - new Date(lastEntry.endTime)) < RESUME_THRESHOLD_MS) {
+    // Reopen the previous entry instead of creating a new one
+    lastEntry.endTime = null;
+    task.lastUsed = now;
+    state.active = { taskId, entryId: lastEntry.id };
+    saveData();
+    renderAll();
+    dismissModal();
+    return;
+  }
+
   // Inherit category from most recent previous entry for this task
   const prevEntry = state.log.find(e => e.taskId === taskId && e.category);
 
