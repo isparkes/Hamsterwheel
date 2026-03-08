@@ -1125,6 +1125,17 @@
         </label>
       </div>
       <div class="settings-row">
+        <label style="flex:1;font-size:13px">Auto-resume when paused</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="unpauseWeekdaysCheck" onchange="document.getElementById('unpauseWeekdaysTime').disabled=!this.checked"> Weekdays at
+        </label>
+        <input type="time" id="unpauseWeekdaysTime" disabled style="width:88px;font-size:13px">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;margin-left:8px">
+          <input type="checkbox" id="unpauseWeekendsCheck" onchange="document.getElementById('unpauseWeekendsTime').disabled=!this.checked"> Weekends at
+        </label>
+        <input type="time" id="unpauseWeekendsTime" disabled style="width:88px;font-size:13px">
+      </div>
+      <div class="settings-row">
         <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save settings</button>
         <button class="btn btn-ghost btn-sm" onclick="triggerCheckin()">Test check-in popup</button>
       </div>
@@ -1287,6 +1298,7 @@
         <button class="btn-snooze" onclick="snoozeCheckin(30)">30m</button>
         <button class="btn-snooze" onclick="snoozeCheckin(60)">1h</button>
       </div>
+      <button class="btn btn-ghost" onclick="pauseAndDismiss()">Pause</button>
       <button class="btn btn-ghost" onclick="dismissModal()">Continue</button>
     </div>
   </div>
@@ -1321,7 +1333,7 @@ function loadData() {
 
 function getDefaultData() {
   return {
-    settings: { intervalMinutes: 5, retentionDays: 7, logRetentionWeeks: 2, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '', lastLocalBackup: '' },
+    settings: { intervalMinutes: 5, retentionDays: 7, logRetentionWeeks: 2, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '', lastLocalBackup: '', unpauseWeekdays: false, unpauseWeekdaysTime: '09:00', unpauseWeekends: false, unpauseWeekendsTime: '09:00' },
     tasks: [],
     log: [],
     active: { taskId: null, entryId: null },
@@ -1370,6 +1382,7 @@ function catStyle(name) {
 let timerIntervalId = null;
 let nextCheckinAt = null;
 let isPaused = false;
+let lastAutoUnpauseDate = null;
 let countdownId = null;
 let titleFlashId = null;
 const ORIGINAL_TITLE = document.title;
@@ -1391,6 +1404,7 @@ function startTimer() {
 }
 
 function updateCountdown() {
+  checkAutoUnpause();
   if (isPaused || !nextCheckinAt) return;
   const diff = Math.max(0, Math.round((nextCheckinAt - Date.now()) / 1000));
   const m = Math.floor(diff / 60).toString().padStart(2, '0');
@@ -1504,6 +1518,18 @@ function startTask(taskId, startISO) {
 }
 
 function pauseAndDismiss() {
+  if (!isPaused) {
+    isPaused = true;
+    const btn = document.getElementById('pauseBtn');
+    btn.classList.add('is-paused');
+    btn.title = 'Resume check-ins';
+    clearInterval(timerIntervalId);
+    clearTimeout(snoozeTimeoutId);
+    timerIntervalId = null;
+    nextCheckinAt = null;
+    document.getElementById('timerDisplay').textContent = 'Paused';
+    setFaviconAlert(false, true);
+  }
   stopCurrentTask();
   dismissModal();
 }
@@ -1594,6 +1620,25 @@ function togglePause() {
     setFaviconAlert(false, false);
     startTimer();
     openModal();
+  }
+}
+
+function checkAutoUnpause() {
+  if (!isPaused) return;
+  const now = new Date();
+  const day = now.getDay();
+  const isWeekend = day === 0 || day === 6;
+  const s = state.settings;
+  const targetTime = isWeekend
+    ? (s.unpauseWeekends ? s.unpauseWeekendsTime : null)
+    : (s.unpauseWeekdays ? s.unpauseWeekdaysTime : null);
+  if (!targetTime) return;
+  const todayStr = now.toDateString();
+  if (lastAutoUnpauseDate === todayStr) return;
+  const [h, m] = targetTime.split(':').map(Number);
+  if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+    lastAutoUnpauseDate = todayStr;
+    togglePause();
   }
 }
 
@@ -2733,6 +2778,10 @@ function saveSettings() {
   state.settings.alertSound = document.getElementById('alertSoundCheck').checked;
   state.settings.alertTitleFlash = document.getElementById('alertTitleFlashCheck').checked;
   state.settings.alertFavicon = document.getElementById('alertFaviconCheck').checked;
+  state.settings.unpauseWeekdays = document.getElementById('unpauseWeekdaysCheck').checked;
+  state.settings.unpauseWeekdaysTime = document.getElementById('unpauseWeekdaysTime').value || '09:00';
+  state.settings.unpauseWeekends = document.getElementById('unpauseWeekendsCheck').checked;
+  state.settings.unpauseWeekendsTime = document.getElementById('unpauseWeekendsTime').value || '09:00';
   saveGistToken(document.getElementById('gistTokenInput').value.trim());
   state.settings.gistAutoBackup = document.getElementById('gistAutoCheck').checked;
   saveData();
@@ -3499,6 +3548,14 @@ function syncSettingsUI() {
   document.getElementById('alertSoundCheck').checked = state.settings.alertSound !== false;
   document.getElementById('alertTitleFlashCheck').checked = state.settings.alertTitleFlash !== false;
   document.getElementById('alertFaviconCheck').checked = state.settings.alertFavicon !== false;
+  const uwd = state.settings.unpauseWeekdays || false;
+  const uwet = state.settings.unpauseWeekends || false;
+  document.getElementById('unpauseWeekdaysCheck').checked = uwd;
+  document.getElementById('unpauseWeekdaysTime').value = state.settings.unpauseWeekdaysTime || '09:00';
+  document.getElementById('unpauseWeekdaysTime').disabled = !uwd;
+  document.getElementById('unpauseWeekendsCheck').checked = uwet;
+  document.getElementById('unpauseWeekendsTime').value = state.settings.unpauseWeekendsTime || '09:00';
+  document.getElementById('unpauseWeekendsTime').disabled = !uwet;
   syncGistUI();
   syncFsUI();
 }
