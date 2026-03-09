@@ -795,7 +795,9 @@
       border-top: 2px solid var(--border);
       background: var(--surface2);
       font-weight: 600;
+      text-align: right;
     }
+    .wc-totals-row td:first-child { text-align: left; }
 
     .week-empty-state {
       padding: 24px 16px;
@@ -803,6 +805,7 @@
       color: var(--text-muted);
       font-size: 13px;
     }
+
 
     /* ---- Toast ---- */
     .toast {
@@ -3351,8 +3354,9 @@ function generateWeekPDF() {
     new Date(a.startTime || a.timestamp).getTime() - new Date(b.startTime || b.timestamp).getTime()
   ));
 
-  // Build task-level weekly totals: taskName → [ms×7]
+  // Build task-level and category-level weekly totals
   const taskMap = new Map();
+  const catMap  = new Map(); // category string | null → [ms×7]
   state.log.forEach(entry => {
     const startMs = new Date(entry.startTime || entry.timestamp).getTime();
     if (isNaN(startMs)) return;
@@ -3362,6 +3366,9 @@ function generateWeekPDF() {
     const ms = Math.max(0, endMs - startMs);
     if (!taskMap.has(entry.taskName)) taskMap.set(entry.taskName, new Array(7).fill(0));
     taskMap.get(entry.taskName)[idx] += ms;
+    const cat = entry.category || null;
+    if (!catMap.has(cat)) catMap.set(cat, new Array(7).fill(0));
+    catMap.get(cat)[idx] += ms;
   });
 
   const fmtShort = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -3395,6 +3402,27 @@ function generateWeekPDF() {
     [...taskMap.values()].reduce((s, arr) => s + arr[i], 0)
   );
   const grandTotal = dayTotalMs.reduce((s, ms) => s + ms, 0);
+
+  // ── Category summary rows (sorted: named alpha, null last) ──
+  const sortedCats = [...catMap.keys()].sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a.localeCompare(b);
+  });
+  let catSummaryRows = '';
+  sortedCats.forEach(cat => {
+    const arr = catMap.get(cat);
+    const rowTotal = arr.reduce((s, ms) => s + ms, 0);
+    const cells = arr.map(ms => `<td class="dur-col">${ms ? fmtMs(ms) : '<span class="nil">—</span>'}</td>`).join('');
+    let labelHtml;
+    if (cat === null) {
+      labelHtml = '<span class="cat-uncat">Uncategorized</span>';
+    } else {
+      const style = catStyle(cat);
+      labelHtml = `<span class="cat-badge" style="${esc(style)}">${esc(cat)}</span>`;
+    }
+    catSummaryRows += `<tr><td class="name-col">${labelHtml}</td>${cells}<td class="total-col">${fmtMs(rowTotal)}</td></tr>`;
+  });
 
   // ── Summary table rows ────────────────────────────────────
   const sortedTasks = [...taskMap.keys()].sort((a, b) => a.localeCompare(b));
@@ -3477,13 +3505,17 @@ function generateWeekPDF() {
   .dur-col  { text-align: right;  white-space: nowrap; font-variant-numeric: tabular-nums; }
   .total-col { text-align: right; font-weight: 700; border-left: 1px solid #e0ddd6;
                font-variant-numeric: tabular-nums; }
-  .totals-row td { border-top: 2px solid #c0bdb6; background: #f0efe9; font-weight: 700; }
+  .totals-row td { border-top: 2px solid #c0bdb6; background: #f0efe9; font-weight: 700; text-align: right; }
+  .totals-row td:first-child { text-align: left; }
   .nil { color: #c8c5be; }
   .day-section { margin-bottom: 24px; page-break-inside: avoid; }
   .day-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px;
                     padding-bottom: 4px; border-bottom: 1px solid #e0ddd6; }
   .day-total td { background: #f5f4f0; font-size: 12px; color: #555; border-top: 1px solid #c0bdb6; }
   .empty { color: #888; font-size: 13px; }
+  .cat-badge { display: inline-block; padding: 2px 7px; border-radius: 4px;
+               font-size: 11px; font-weight: 500; }
+  .cat-uncat { font-size: 12px; color: #888; }
   @media print {
     body { padding: 16px 20px; }
     .no-print { display: none; }
@@ -3499,6 +3531,27 @@ function generateWeekPDF() {
 </div>
 
 ${hasData ? `
+<section>
+  <h2>Weekly Summary by Category</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="name-col">Category</th>
+        ${DAY_SHORT.map(d => `<th class="dur-col">${d}</th>`).join('')}
+        <th class="total-col">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${catSummaryRows}
+      <tr class="totals-row">
+        <td>Total</td>
+        ${dayTotalCells}
+        <td class="total-col"><strong>${fmtMs(grandTotal)}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section>
   <h2>Weekly Summary by Task</h2>
   <table>
