@@ -565,7 +565,7 @@
       background: var(--surface);
       color: var(--text);
       outline: none;
-      width: 88px;
+      width: 160px;
     }
 
     .log-start-cell {
@@ -2028,18 +2028,7 @@ function saveTimeEdit(entryId, field, value) {
   if (!value) { closeTimeEditor(); return; }
   const entry = state.log.find(e => e.id === entryId);
   if (!entry) return;
-  let newIso;
-  if (value.includes('T')) {
-    // datetime-local value (cross-boundary entry)
-    newIso = new Date(value).toISOString();
-  } else {
-    // time-only value — preserve original date
-    const originalIso = field === 'start' ? (entry.startTime || entry.timestamp) : entry.endTime;
-    const base = new Date(originalIso || new Date());
-    const [h, m] = value.split(':').map(Number);
-    base.setHours(h, m, 0, 0);
-    newIso = base.toISOString();
-  }
+  const newIso = new Date(value).toISOString();
   if (field === 'start') {
     if (entry.endTime && new Date(newIso) >= new Date(entry.endTime)) {
       alert('Start time must be before end time'); return;
@@ -2061,16 +2050,11 @@ function saveTimeEdit(entryId, field, value) {
 
 function buildTimeInput(entry, field, currentIso) {
   const inp = document.createElement('input');
-  const startIso = entry.startTime || entry.timestamp;
-  const crossesBoundary = entry.endTime && startIso &&
-    new Date(startIso).toDateString() !== new Date(entry.endTime).toDateString();
-  inp.type = crossesBoundary ? 'datetime-local' : 'time';
+  inp.type = 'datetime-local';
   inp.className = 'log-time-input';
   const d = new Date(currentIso);
   const pad = n => n.toString().padStart(2, '0');
-  inp.value = crossesBoundary
-    ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-    : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  inp.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   inp.addEventListener('change', () => { if (inp.value) saveTimeEdit(entry.id, field, inp.value); });
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); if (inp.value) saveTimeEdit(entry.id, field, inp.value); }
