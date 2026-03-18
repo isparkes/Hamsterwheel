@@ -1128,6 +1128,11 @@
         </label>
       </div>
       <div class="settings-row">
+        <label for="autoPauseInput">Auto-pause active task after</label>
+        <input type="number" id="autoPauseInput" min="0" max="1440" value="0">
+        <label>minutes (0 = off)</label>
+      </div>
+      <div class="settings-row">
         <label style="flex:1;font-size:13px">Auto-resume when paused</label>
         <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="unpauseWeekdaysCheck" onchange="document.getElementById('unpauseWeekdaysTime').disabled=!this.checked"> Weekdays at
@@ -1301,6 +1306,7 @@
         <button class="btn-snooze" onclick="snoozeCheckin(30)">30m</button>
         <button class="btn-snooze" onclick="snoozeCheckin(60)">1h</button>
       </div>
+      <div id="autoPauseCountdown" style="display:none;font-size:12px;color:var(--text-muted);align-self:center"></div>
       <button class="btn btn-ghost" onclick="pauseAndDismiss()">Pause</button>
       <button class="btn btn-ghost" onclick="dismissModal()">Continue</button>
     </div>
@@ -1336,7 +1342,7 @@ function loadData() {
 
 function getDefaultData() {
   return {
-    settings: { intervalMinutes: 5, retentionDays: 7, logRetentionWeeks: 2, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '', lastLocalBackup: '', unpauseWeekdays: false, unpauseWeekdaysTime: '09:00', unpauseWeekends: false, unpauseWeekendsTime: '09:00' },
+    settings: { intervalMinutes: 5, retentionDays: 7, logRetentionWeeks: 2, alertSound: true, alertTitleFlash: true, alertFavicon: true, gistId: '', gistAutoBackup: false, gistLastBackup: '', taskSort: 'added-asc', fsAutoBackup: false, fsFileName: '', fsLastBackup: '', lastLocalBackup: '', unpauseWeekdays: false, unpauseWeekdaysTime: '09:00', unpauseWeekends: false, unpauseWeekendsTime: '09:00', autoPauseMinutes: 0 },
     tasks: [],
     log: [],
     active: { taskId: null, entryId: null },
@@ -1388,6 +1394,7 @@ let isPaused = false;
 let lastAutoUnpauseDate = null;
 let countdownId = null;
 let titleFlashId = null;
+let lastInteractionAt = Date.now();
 const ORIGINAL_TITLE = document.title;
 
 function startTimer() {
@@ -1406,8 +1413,38 @@ function startTimer() {
   countdownId = setInterval(updateCountdown, 1000);
 }
 
+function checkAutoPause() {
+  const limit = state.settings.autoPauseMinutes || 0;
+  const countdownEl = document.getElementById('autoPauseCountdown');
+  if (!limit || !state.active.entryId) {
+    if (countdownEl) countdownEl.style.display = 'none';
+    return;
+  }
+  const remainingMs = limit * 60 * 1000 - (Date.now() - lastInteractionAt);
+  if (remainingMs <= 0) {
+    if (countdownEl) countdownEl.style.display = 'none';
+    pauseAndDismiss();
+    showToast('Task auto-paused — no response after ' + limit + ' min');
+    return;
+  }
+  // Only show countdown in modal when it's open
+  const modalVisible = document.getElementById('modalOverlay').classList.contains('visible');
+  if (countdownEl) {
+    if (modalVisible) {
+      const secs = Math.ceil(remainingMs / 1000);
+      const m = Math.floor(secs / 60).toString().padStart(2, '0');
+      const s = (secs % 60).toString().padStart(2, '0');
+      countdownEl.style.display = '';
+      countdownEl.textContent = `Auto-pause in ${m}:${s}`;
+    } else {
+      countdownEl.style.display = 'none';
+    }
+  }
+}
+
 function updateCountdown() {
   checkAutoUnpause();
+  checkAutoPause();
   if (isPaused || !nextCheckinAt) return;
   const diff = Math.max(0, Math.round((nextCheckinAt - Date.now()) / 1000));
   const m = Math.floor(diff / 60).toString().padStart(2, '0');
@@ -1430,6 +1467,7 @@ function populateModalStartPicker() {
 
   if (!state.active.taskId || !state.active.entryId) {
     row.style.display = 'none';
+    select.innerHTML = '';
     return;
   }
 
@@ -1647,6 +1685,9 @@ function checkAutoUnpause() {
 
 function openModal() {
   const overlay = document.getElementById('modalOverlay');
+  if (!overlay.classList.contains('visible')) {
+    lastInteractionAt = Date.now();
+  }
   const tasksEl = document.getElementById('modalTasks');
   const subtitle = document.getElementById('modalSubtitle');
 
@@ -1703,6 +1744,8 @@ function openModal() {
 }
 
 function dismissModal() {
+  lastInteractionAt = Date.now();
+  document.getElementById('autoPauseCountdown').style.display = 'none';
   document.getElementById('modalOverlay').classList.remove('visible');
   stopAlerts();
 }
@@ -2754,6 +2797,7 @@ function saveSettings() {
   const interval = parseInt(document.getElementById('intervalInput').value);
   const retention = parseInt(document.getElementById('retentionInput').value);
   const logRetention = parseInt(document.getElementById('logRetentionInput').value);
+  const autoPause = parseInt(document.getElementById('autoPauseInput').value);
 
   if (isNaN(interval) || interval < 1) { alert('Interval must be at least 1 minute'); return; }
   if (isNaN(retention) || retention < 1) { alert('Retention must be at least 1 day'); return; }
@@ -2762,6 +2806,7 @@ function saveSettings() {
   state.settings.intervalMinutes = interval;
   state.settings.retentionDays = retention;
   state.settings.logRetentionWeeks = logRetention;
+  state.settings.autoPauseMinutes = isNaN(autoPause) || autoPause < 0 ? 0 : autoPause;
   state.settings.alertSound = document.getElementById('alertSoundCheck').checked;
   state.settings.alertTitleFlash = document.getElementById('alertTitleFlashCheck').checked;
   state.settings.alertFavicon = document.getElementById('alertFaviconCheck').checked;
@@ -3582,6 +3627,7 @@ function syncSettingsUI() {
   document.getElementById('intervalInput').value = state.settings.intervalMinutes;
   document.getElementById('retentionInput').value = state.settings.retentionDays;
   document.getElementById('logRetentionInput').value = state.settings.logRetentionWeeks ?? 2;
+  document.getElementById('autoPauseInput').value = state.settings.autoPauseMinutes ?? 0;
   document.getElementById('alertSoundCheck').checked = state.settings.alertSound !== false;
   document.getElementById('alertTitleFlashCheck').checked = state.settings.alertTitleFlash !== false;
   document.getElementById('alertFaviconCheck').checked = state.settings.alertFavicon !== false;
