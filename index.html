@@ -1505,6 +1505,16 @@ function startTask(taskId, startISO) {
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
 
+  // If paused, unpause first (without opening modal)
+  if (isPaused) {
+    isPaused = false;
+    const btn = document.getElementById('pauseBtn');
+    btn.classList.remove('is-paused');
+    btn.title = 'Pause check-ins';
+    setFaviconAlert(false, false);
+    startTimer();
+  }
+
   // Same task already active — just dismiss
   if (state.active.taskId === taskId) {
     dismissModal();
