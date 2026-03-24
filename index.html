@@ -2129,6 +2129,17 @@ function backdateEntry(entryId, newStartIso) {
   // Adapt the end time of the preceding (older) entry to keep the timeline continuous
   const prevEntry = state.log[entryIdx + 1];
   if (prevEntry && prevEntry.endTime) {
+    const gapMs = new Date(newStartIso) - new Date(prevEntry.endTime);
+    if (gapMs > 15 * 60 * 1000) {
+      const gapMins = Math.round(gapMs / 60000);
+      const ok = confirm(`There is a ${gapMins}-minute gap between the previous entry's end time and this new start time. Update the previous entry's end time to match?`);
+      if (!ok) {
+        saveData();
+        renderLog();
+        renderWeekReport();
+        return;
+      }
+    }
     prevEntry.endTime = newStartIso;
   }
   activeTimeEditEntryId = null;

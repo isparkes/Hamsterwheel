@@ -183,6 +183,15 @@ Duration format: `30s` / `4m 22s` / `1h 05m`.
 - Escape cancels.
 - State variables: `activeTimeEditEntryId`, `activeTimeEditField` (`'start'` or `'end'`).
 
+#### Quick-backdate buttons
+
+For the currently active entry, `renderLog()` renders quick-backdate buttons (`backdate-btn`) next to the start time: −5m, −15m, −30m, −1h. Each snaps the start time to the previous wall-clock boundary for that interval. Buttons are omitted when:
+- The target time is at or after the current start time.
+- The target time is at or before the preceding entry's own start time.
+- Two intervals resolve to the same boundary (de-duplicated via a `Set` of ISO strings).
+
+Clicking calls `backdateEntry(entry.id, iso)`. `backdateEntry` sets the entry's `startTime` to the new ISO string, then adjusts the preceding (older) entry's `endTime` to match — **unless the gap between `prevEntry.endTime` and `newStartIso` exceeds 15 minutes**, in which case a `confirm()` dialog asks the user first. If the user declines, only the active entry's start time is changed and the function returns early after saving and re-rendering.
+
 #### Gap indicators
 When two consecutive log entries have a gap of more than 1 minute, a dashed separator row appears between them showing the gap duration. Three buttons appear on hover:
 
@@ -318,6 +327,7 @@ A small download icon button in the "Now tracking" card header. Normal state: di
 | `setEntryName(entryId, name)` | Persist a renamed log entry task name |
 | `openTimeEditor(entryId, field)` | Show inline time input for start or end |
 | `saveTimeEdit(entryId, field, value)` | Validate and persist an edited time |
+| `backdateEntry(entryId, newStartIso)` | Set active entry start time; optionally adjust preceding entry's end time (prompts if gap > 15 min) |
 | `getSortedTasks()` | Return tasks sorted per `state.settings.taskSort` |
 | `setTaskSort(base)` | Update task sort, toggling direction if already active |
 | `getWeekDays(offset?)` | Return 7 Date objects for the target Mon–Sun week |
