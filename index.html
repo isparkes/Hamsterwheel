@@ -1313,6 +1313,19 @@
   </div>
 </div>
 
+<!-- Confirm dialog -->
+<div class="modal-overlay" id="confirmOverlay">
+  <div class="modal" style="max-width:320px">
+    <div class="modal-header">
+      <div class="modal-title" id="confirmMessage" style="font-size:15px;font-weight:600"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-ghost" id="confirmCancel"></button>
+      <button class="btn btn-primary" id="confirmOk"></button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Notification bar -->
@@ -1391,6 +1404,7 @@ function catStyle(name) {
 let timerIntervalId = null;
 let nextCheckinAt = null;
 let isPaused = false;
+let pausedTaskId = null;
 let lastAutoUnpauseDate = null;
 let countdownId = null;
 let titleFlashId = null;
@@ -1501,7 +1515,29 @@ function populateModalStartPicker() {
   select.appendChild(nowOpt);
 }
 
-function startTask(taskId, startISO) {
+function showConfirm(message, okText, cancelText) {
+  return new Promise(resolve => {
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmOk').textContent = okText;
+    document.getElementById('confirmCancel').textContent = cancelText;
+    const overlay = document.getElementById('confirmOverlay');
+    overlay.classList.add('visible');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    function cleanup(result) {
+      overlay.classList.remove('visible');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onOk() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+async function startTask(taskId, startISO) {
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
 
@@ -1513,6 +1549,44 @@ function startTask(taskId, startISO) {
     btn.title = 'Pause check-ins';
     setFaviconAlert(false, false);
     startTimer();
+  }
+
+  // If this is the same task that was active when paused, ask whether to continue or start fresh
+  const wasPausedTask = pausedTaskId === taskId;
+  pausedTaskId = null;
+
+  let skipResume = false;
+  if (wasPausedTask) {
+    const wantContinue = await showConfirm('This task was previously paused. Continue that session or start a new one?', 'Continue session', 'New session');
+    if (wantContinue) {
+      if (state.active.taskId === taskId) {
+        // Entry is still open (paused via Pause button in modal) — just continue
+        dismissModal();
+        return;
+      } else {
+        // Entry was closed (paused via toggle) — reopen the last entry
+        const lastEntry = state.log.find(e => e.taskId === taskId);
+        if (lastEntry) {
+          lastEntry.endTime = null;
+          task.lastUsed = new Date().toISOString();
+          state.active = { taskId, entryId: lastEntry.id };
+          saveData();
+          renderAll();
+          dismissModal();
+          return;
+        }
+      }
+    } else {
+      // Start new session — close current entry if still open
+      if (state.active.taskId === taskId && state.active.entryId) {
+        const currentEntry = state.log.find(e => e.id === state.active.entryId);
+        if (currentEntry && !currentEntry.endTime) {
+          currentEntry.endTime = new Date().toISOString();
+        }
+        state.active = { taskId: null, entryId: null };
+      }
+      skipResume = true;
+    }
   }
 
   // Same task already active — just dismiss
@@ -1532,17 +1606,19 @@ function startTask(taskId, startISO) {
   }
 
   // Check if the most recent entry for this task ended within the last 5 minutes
-  const lastEntry = state.log.find(e => e.taskId === taskId);
-  const RESUME_THRESHOLD_MS = 5 * 60 * 1000;
-  if (lastEntry && lastEntry.endTime && (new Date(now) - new Date(lastEntry.endTime)) < RESUME_THRESHOLD_MS) {
-    // Reopen the previous entry instead of creating a new one
-    lastEntry.endTime = null;
-    task.lastUsed = now;
-    state.active = { taskId, entryId: lastEntry.id };
-    saveData();
-    renderAll();
-    dismissModal();
-    return;
+  if (!skipResume) {
+    const lastEntry = state.log.find(e => e.taskId === taskId);
+    const RESUME_THRESHOLD_MS = 5 * 60 * 1000;
+    if (lastEntry && lastEntry.endTime && (new Date(now) - new Date(lastEntry.endTime)) < RESUME_THRESHOLD_MS) {
+      // Reopen the previous entry instead of creating a new one
+      lastEntry.endTime = null;
+      task.lastUsed = now;
+      state.active = { taskId, entryId: lastEntry.id };
+      saveData();
+      renderAll();
+      dismissModal();
+      return;
+    }
   }
 
   // Inherit category from most recent previous entry for this task
@@ -1570,6 +1646,7 @@ function startTask(taskId, startISO) {
 
 function pauseAndDismiss() {
   if (!isPaused) {
+    pausedTaskId = state.active.taskId || null;
     isPaused = true;
     const btn = document.getElementById('pauseBtn');
     btn.classList.add('is-paused');
@@ -1660,6 +1737,7 @@ function togglePause() {
   btn.classList.toggle('is-paused', isPaused);
   btn.title = isPaused ? 'Resume check-ins' : 'Pause check-ins';
   if (isPaused) {
+    pausedTaskId = state.active.taskId || null;
     stopCurrentTask();
     clearInterval(timerIntervalId);
     clearTimeout(snoozeTimeoutId);
@@ -2121,7 +2199,7 @@ function buildTimeInput(entry, field, currentIso) {
   return inp;
 }
 
-function backdateEntry(entryId, newStartIso) {
+async function backdateEntry(entryId, newStartIso) {
   const entryIdx = state.log.findIndex(e => e.id === entryId);
   if (entryIdx === -1) return;
   const entry = state.log[entryIdx];
@@ -2132,7 +2210,7 @@ function backdateEntry(entryId, newStartIso) {
     const gapMs = new Date(newStartIso) - new Date(prevEntry.endTime);
     if (gapMs > 15 * 60 * 1000) {
       const gapMins = Math.round(gapMs / 60000);
-      const ok = confirm(`There is a ${gapMins}-minute gap between the previous entry's end time and this new start time. Update the previous entry's end time to match?`);
+      const ok = await showConfirm(`There is a ${gapMins}-minute gap between the previous entry's end time and this new start time.`, 'Update end time', 'Leave gap');
       if (!ok) {
         saveData();
         renderLog();
