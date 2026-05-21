@@ -1321,6 +1321,7 @@
     </div>
     <div class="modal-footer" style="justify-content:flex-end;gap:8px">
       <button class="btn btn-ghost" id="confirmCancel"></button>
+      <button class="btn btn-ghost" id="confirmAlt" style="display:none"></button>
       <button class="btn btn-primary" id="confirmOk"></button>
     </div>
   </div>
@@ -1533,6 +1534,35 @@ function showConfirm(message, okText, cancelText) {
     function onOk() { cleanup(true); }
     function onCancel() { cleanup(false); }
     okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+function showConfirm3(message, okText, altText, cancelText) {
+  return new Promise(resolve => {
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmOk').textContent = okText;
+    document.getElementById('confirmCancel').textContent = cancelText;
+    const altBtn = document.getElementById('confirmAlt');
+    altBtn.textContent = altText;
+    altBtn.style.display = '';
+    const overlay = document.getElementById('confirmOverlay');
+    overlay.classList.add('visible');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    function cleanup(result) {
+      overlay.classList.remove('visible');
+      altBtn.style.display = 'none';
+      okBtn.removeEventListener('click', onOk);
+      altBtn.removeEventListener('click', onAlt);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onOk() { cleanup('ok'); }
+    function onAlt() { cleanup('alt'); }
+    function onCancel() { cleanup('cancel'); }
+    okBtn.addEventListener('click', onOk);
+    altBtn.addEventListener('click', onAlt);
     cancelBtn.addEventListener('click', onCancel);
   });
 }
@@ -2210,13 +2240,23 @@ async function backdateEntry(entryId, newStartIso) {
     const gapMs = new Date(newStartIso) - new Date(prevEntry.endTime);
     if (gapMs > 15 * 60 * 1000) {
       const gapMins = Math.round(gapMs / 60000);
-      const ok = await showConfirm(`There is a ${gapMins}-minute gap between the previous entry's end time and this new start time.`, 'Update end time', 'Leave gap');
-      if (!ok) {
+      const choice = await showConfirm3(`There is a ${gapMins}-minute gap between the previous entry's end time and this new start time.`, 'Update end time', 'Backdate start', 'Leave gap');
+      if (choice === 'cancel') {
         saveData();
         renderLog();
         renderWeekReport();
         return;
       }
+      if (choice === 'alt') {
+        entry.startTime = prevEntry.endTime;
+        activeTimeEditEntryId = null;
+        activeTimeEditField = null;
+        saveData();
+        renderLog();
+        renderWeekReport();
+        return;
+      }
+      // choice === 'ok': fall through to extend prevEntry.endTime
     }
     prevEntry.endTime = newStartIso;
   }
@@ -2630,7 +2670,7 @@ function renderLog() {
 
           const trimEndBtn = document.createElement('button');
           trimEndBtn.className = 'btn-fix-overlap';
-          trimEndBtn.textContent = 'Trim end \u2191';
+          trimEndBtn.textContent = 'Trim end \u2193';
           trimEndBtn.title = 'Trim the end of the entry below to remove the overlap';
           trimEndBtn.addEventListener('click', () => trimOverlapEnd(nextEntry.id, entry.startTime || entry.timestamp));
           overlapLi.appendChild(trimEndBtn);
